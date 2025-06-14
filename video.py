@@ -1,4 +1,5 @@
-# video.py – Kamera, algılama ve servo takibi
+
+# video.py – Kamera, algılama ve servo takibi (Picamera2 sürümü)
 # ──────────────────────────────────────────────────────────────
 # • Yüz (SSD-ResNet) + İnsan (YOLOv4-tiny) algılama
 # • DETECT_MODE = "person" / "face" / "both"
@@ -6,29 +7,28 @@
 # • Otomatik pan-tilt servo takibi (CH 8-9)
 # • FPS ölçümü ve gamma/histogram iyileştirme
 
-import cv2, numpy as np, time
+import time, cv2, numpy as np
 from pathlib import Path
+from picamera2 import Picamera2
 import models_cfg as cfg
 import movement, security
 
-# ——— Kamera başlatma —————————————————————
-W = H = 320
-cap = cv2.VideoCapture(0, cv2.CAP_ANY)
-cap.set(cv2.CAP_PROP_FRAME_WIDTH , W)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, H)
+# Kamera başlatma
+W, H = 320, 240
+picam2 = Picamera2()
+picam2.configure(picam2.create_preview_configuration(main={"size": (W, H)}))
+picam2.start()
+time.sleep(1)  # Kamera hazır olması için kısa bekleme
 
-if not cap.isOpened():
-    raise RuntimeError("Kamera açılamadı. Lütfen bağlı olduğundan emin olun.")
+print(f"[VIDEO] Picamera2 başlatıldı: {W}×{H}")
 
-print(f"[VIDEO] Kamera açıldı: index=0, api={int(cap.get(cv2.CAP_PROP_BACKEND))}")
-
-# ——— DNN modelleri yükleme ——————————————————
+# DNN modelleri yükleme
 face_net = cv2.dnn.readNetFromCaffe(str(cfg.FACE_PROTO), str(cfg.FACE_MODEL))
 yolo_net = cv2.dnn.readNetFromDarknet(str(cfg.PERSON_CFG), str(cfg.PERSON_WEIGHTS))
 yolo_net.setPreferableBackend(cv2.dnn.DNN_BACKEND_OPENCV)
 yolo_net.setPreferableTarget(cv2.dnn.DNN_TARGET_CPU)
 
-# ——— Bayraklar / sabitler ——————————————————
+# Bayraklar / sabitler
 TRACK       = False
 APPROACH    = False
 AUTO_GAMMA  = False
@@ -50,7 +50,7 @@ pan = tilt = 90
 movement.rex.write(PAN_CH, pan)
 movement.rex.write(TILT_CH, tilt)
 
-# ——— Görüntü işleme LUT'ları ———————————————
+# Görüntü işleme LUT'ları
 _lut = {}
 def gamma(img):
     y = cv2.cvtColor(img, cv2.COLOR_BGR2YCrCb)[:, :, 0].mean()
@@ -64,21 +64,19 @@ def hist(img):
     l, a, b = cv2.split(cv2.cvtColor(img, cv2.COLOR_BGR2LAB))
     return cv2.cvtColor(cv2.merge((clahe.apply(l), a, b)), cv2.COLOR_LAB2BGR)
 
-# ——— FPS hesaplama için zaman damgası ———————————
+# FPS hesaplama
 _fps_t = [time.time()]
 
-# ——— Ana görüntü üretici fonksiyon ——————————————
+# Ana görüntü üretici fonksiyon
 def next_frame():
     global pan, tilt, _last_fwd
-    ok, frame = cap.read()
-    if not ok:
-        cap.release()
-        cap.open(0)
+
+    frame = picam2.capture_array()
+    if frame is None:
         return None
+    frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
 
-    frame = cv2.resize(frame, (W, H))
-
-    # — İnsan kutuları (YOLO) ————————————————
+    # İnsan kutuları (YOLO)
     p_boxes = []
     if DETECT_MODE in ("person", "both"):
         blob = cv2.dnn.blobFromImage(frame, 1/255, (416, 416), swapRB=True, crop=False)
@@ -90,7 +88,7 @@ def next_frame():
                     x1, y1 = int(cx - w / 2), int(cy - h / 2)
                     p_boxes.append((x1, y1, x1 + w, y1 + h))
 
-    # — Yüz kutuları (Caffe SSD) ————————————————
+    # Yüz kutuları (SSD Caffe)
     f_boxes = []
     if DETECT_MODE in ("face", "both"):
         blob = cv2.dnn.blobFromImage(frame, 1.0, (300, 300), (104, 177, 123))
@@ -101,7 +99,7 @@ def next_frame():
                 x1, y1, x2, y2 = (det[0, 0, i, 3:7] * [W, H, W, H]).astype(int)
                 f_boxes.append((x1, y1, x2, y2))
 
-    # — ID eşleme ve hedef seçim ————————————————
+    # Hedef seçimi
     tracked = security.assign_ids(frame, f_boxes)
     tgt = None
     if security.TARGET_ID is not None:
@@ -116,7 +114,6 @@ def next_frame():
         x1, y1, x2, y2 = max(p_boxes, key=lambda b: (b[2]-b[0])*(b[3]-b[1]))
         tgt = (x1, y1, x2, y2, (x1 + x2) // 2, (y1 + y2) // 2)
 
-    # — Kutular çizimi ——————————————————
     for (x1, y1, x2, y2) in p_boxes:
         cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 120, 255), 1)
     for fid, (x1, y1, x2, y2, cx, cy) in tracked:
@@ -124,7 +121,6 @@ def next_frame():
         cv2.rectangle(frame, (x1, y1), (x2, y2), col, 2)
         cv2.putText(frame, str(fid), (x1 + 2, y1 + 14), 0, 0.45, col, 1, cv2.LINE_AA)
 
-    # — Mesafe metni & takip servo hareketi —————————————
     if tgt:
         x1, y1, x2, y2, cx, cy = tgt
         px_w = x2 - x1
@@ -143,23 +139,20 @@ def next_frame():
                 movement.rex.forward()
                 _last_fwd = time.time()
 
-    # — Görsel iyileştirme (gamma/hist) ——————————————
     if AUTO_GAMMA:
         frame = gamma(frame)
     if AUTO_HIST:
         frame = hist(frame)
 
-    # — FPS bilgisi (debug için) —————————————————
     now = time.time()
     fps = 1.0 / (now - _fps_t[0])
     _fps_t[0] = now
     cv2.putText(frame, f"{fps:.1f} FPS", (5, H - 10), 0, 0.5, (255, 255, 0), 1)
 
-    # — JPEG olarak encode et ve döndür ————————————
     _, jpg = cv2.imencode(".jpg", frame)
     time.sleep(0.05)
     return jpg.tobytes()
 
-# — API Export ——————————————————————
+# API Export
 get_targets = security.get_targets
 set_target  = security.set_target
