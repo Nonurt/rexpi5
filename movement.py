@@ -2,17 +2,17 @@
 Cross-platform motion engine for the REX quadruped.
 ────────────────────────────────────────────────────────
 • Runs on Raspberry Pi 5 with a real PCA9685 driver
-• Falls back to a harmless mock on Windows so you can develop & test
+• Falls back to a harmless mock on Windows / dev-PC
 """
 
 # ───────────── Imports & HW detection ─────────────
 import json, time, platform
 from pathlib import Path
 
-def is_raspberry_pi():
-    system = platform.system()
-    machine = platform.machine().lower()
-    return system == "Linux" and any(arch in machine for arch in ["arm", "aarch64"])
+def is_raspberry_pi() -> bool:
+    return platform.system() == "Linux" and (
+        "arm" in platform.machine().lower() or "aarch64" in platform.machine().lower()
+    )
 
 IS_PI = is_raspberry_pi()
 
@@ -24,10 +24,10 @@ try:
         HW = "real"
         print("[movement] Gerçek PCA9685 aktif (Raspberry Pi).")
     else:
-        raise ImportError("Non-RPi Linux")
+        raise ImportError("Mock fallback")
 except (ImportError, NotImplementedError, RuntimeError) as e:
     HW = "mock"
-    print(f"[movement] Mock PCA9685 modu aktif (test ortamı): {e}")
+    print(f"[movement] Mock PCA9685 modu aktif: {e}")
 
     class _MockChannel:
         duty_cycle = 0
@@ -44,14 +44,13 @@ except (ImportError, NotImplementedError, RuntimeError) as e:
     PCA9685 = _MockPCA9685
     SCL = SDA = None
 
-
 # ───────────── Config handling ───────────────
 CFG_PATH = Path(__file__).with_name("config.json")
 DEFAULTS = {
-    "trim":          [-12, 10, -18, 12],
+    "trim":          [-12, 10, -18, 12],   # hip trims
     "stance_height": 60,
     "big_step":      False,
-    "spd":           5,
+    "spd":           5,                    # ms / micro-step
     "high":          10
 }
 
@@ -60,9 +59,9 @@ def _load_cfg():
         try:
             return {**DEFAULTS, **json.loads(CFG_PATH.read_text())}
         except json.JSONDecodeError:
-            print("[config] Hatalı config.json, varsayılanlara dönüldü.")
+            print("[config] Hatalı config.json, varsayılanlar kullanıldı.")
     else:
-        print("[config] config.json bulunamadı, varsayılan ayarlar yüklendi.")
+        print("[config] config.json bulunamadı, varsayılanlar yüklendi.")
     return DEFAULTS.copy()
 
 def _save_cfg(cfg):
@@ -74,29 +73,33 @@ class RexMotion:
     SERVO_MAX = 575
     FREQ      = 50
 
+    HIP_CH  = (0, 2, 4, 6)   # (FL, RL, RR, FR)
+    LIFT_CH = (1, 3, 5, 7)
+
+    # Hip yönleri (mekanik)
     FWD_DIR = {0:180, 2:180, 4:0, 6:0}
     BCK_DIR = {0:0,   2:0,   4:180,6:180}
 
-    HIP_CH  = (0, 2, 4, 6)
-    LIFT_CH = (1, 3, 5, 7)
-
     def __init__(self):
+        # HW init
         if HW == "real":
             try:
                 i2c = busio.I2C(SCL, SDA)
                 self.pwm = PCA9685(i2c, address=0x40)
                 self.pwm.frequency = self.FREQ
             except Exception as e:
-                print(f"[I2C] Hata oluştu: {e}, mock PCA9685 ile devam.")
+                print(f"[I2C] Hata: {e} → mock PCA9685")
                 self.pwm = PCA9685()
         else:
             self.pwm = PCA9685()
         time.sleep(0.05)
 
+        # Runtime state
         self.cfg = _load_cfg()
-        self.s   = [90]*10
+        self.s   = [90]*10          # en son yazılan açı cache
         self.center_servos()
 
+    # ---------- low-level helpers ----------
     @staticmethod
     def _pulse(angle: int) -> int:
         return int(angle/180 * (RexMotion.SERVO_MAX - RexMotion.SERVO_MIN)
@@ -112,9 +115,13 @@ class RexMotion:
         if HW == "mock":
             print(f"[mock] ch{ch} → {angle:3d}°")
 
+    # ---------- posture helpers ----------
     def center_servos(self):
-        for ch in range(8):
+        """Kalçaları 90°, lift kanallarını current stance_height’a al."""
+        for ch in self.HIP_CH:
             self.write(ch, 90)
+        for ch in self.LIFT_CH:
+            self.write(ch, self.cfg["stance_height"])
 
     def stabilize(self):
         h = self.cfg["stance_height"]
@@ -125,16 +132,19 @@ class RexMotion:
     def lean_forward(self): self.srv(90,90,90,90,  60,120,120, 60,4,4,4,4)
     def lean_back(self):    self.srv(90,90,90,90, 120, 60, 60,120,4,4,4,4)
 
+    # ---------- internal micro-step ----------
     def _srv_core(self, hips, lifts, spd):
         lifts = [l + self.cfg["high"]*3 for l in lifts]
         done  = False
         while not done:
             done = True
+            # hip channels
             for i,ch in enumerate(self.HIP_CH):
                 cur, tgt = self.s[ch], hips[i]
                 if cur != tgt:
                     self.write(ch, cur + (spd[i] if cur < tgt else -spd[i]))
                     done = False
+            # lift channels
             for i,ch in enumerate(self.LIFT_CH):
                 cur, tgt = self.s[ch], lifts[i]
                 if cur != tgt:
@@ -146,6 +156,7 @@ class RexMotion:
     def srv(self, p11,p21,p31,p41, p12,p22,p32,p42, sp1,sp2,sp3,sp4):
         self._srv_core([p11,p21,p31,p41], [p12,p22,p32,p42], (sp1,sp2,sp3,sp4))
 
+    # ---------- hip helpers ----------
     def HIP_FWD(self, ch):
         base = self.FWD_DIR[ch]
         return (30 if base==0 else 150) if self.cfg["big_step"] else (60 if base==0 else 120)
@@ -154,8 +165,8 @@ class RexMotion:
         base = self.BCK_DIR[ch]
         return (30 if base==0 else 150) if self.cfg["big_step"] else (60 if base==0 else 120)
 
-    # Gait implementations
-    def forward(self):  # (Aynen bıraktım)
+    # ---------- gaits (örnek: forward/back) ----------
+    def forward(self):
         self.srv(self.HIP_BCK(0),  90,  90, self.HIP_FWD(6), 42,42,42,  6, 2,3,2,2)
         self.srv(self.HIP_BCK(0),  90,  90, self.HIP_FWD(6), 33,33,33, 42, 2,3,2,2)
         self.srv(self.HIP_BCK(0), self.HIP_BCK(2), self.HIP_FWD(4), self.HIP_FWD(6), 42,42, 6,42, 2,2,3,2)
@@ -166,22 +177,27 @@ class RexMotion:
         self.srv(90,90,90,90, 33,33,33,33, 3,2,2,2)
 
     def back(self):
-        self.srv(self.HIP_FWD(0), self.HIP_FWD(2), self.HIP_BCK(4), self.HIP_BCK(6), 42, 6,42,42, 2,3,2,2)
-        self.srv(self.HIP_FWD(0), self.HIP_FWD(2), self.HIP_BCK(4), self.HIP_BCK(6), 33,33,33,42, 2,3,2,2)
-        self.srv(self.HIP_FWD(0),  90,  90, self.HIP_BCK(6), 42, 6,42,42, 2,2,3,2)
-        self.srv(self.HIP_FWD(0),  90,  90, self.HIP_BCK(6), 24,33,33,33, 2,2,3,2)
-        self.srv(self.HIP_BCK(0), self.HIP_BCK(2), self.HIP_FWD(4), self.HIP_FWD(6),  6,42,42,42, 2,2,2,3)
-        self.srv(self.HIP_BCK(0), self.HIP_BCK(2), self.HIP_FWD(4), self.HIP_FWD(6), 42,33,33, 6, 2,2,2,3)
-        self.srv(self.HIP_BCK(0),  90,  90, self.HIP_FWD(6), 42, 6,33,33, 3,2,2,2)
+        self.srv(self.HIP_FWD(0), self.HIP_FWD(2), self.HIP_BCK(4), self.HIP_BCK(6),
+                 42, 6,42,42, 2,3,2,2)
+        self.srv(self.HIP_FWD(0), self.HIP_FWD(2), self.HIP_BCK(4), self.HIP_BCK(6),
+                 33,33,33,42, 2,3,2,2)
+        self.srv(self.HIP_FWD(0),  90,  90, self.HIP_BCK(6),
+                 42, 6,42,42, 2,2,3,2)
+        self.srv(self.HIP_FWD(0),  90,  90, self.HIP_BCK(6),
+                 24,33,33,33, 2,2,3,2)
+        self.srv(self.HIP_BCK(0), self.HIP_BCK(2), self.HIP_FWD(4), self.HIP_FWD(6),
+                 6,42,42,42, 2,2,2,3)
+        self.srv(self.HIP_BCK(0), self.HIP_BCK(2), self.HIP_FWD(4), self.HIP_FWD(6),
+                 42,33,33, 6, 2,2,2,3)
+        self.srv(self.HIP_BCK(0),  90,  90, self.HIP_FWD(6),
+                 42, 6,33,33, 3,2,2,2)
         self.srv(90,90,90,90, 33,33,33,33, 3,2,2,2)
 
-    def turn_left(self):
-        # Aynen bırakıldı, dilersen sonra optimize ederiz
-        pass
+    # turn_left / turn_right mevcutsa aynen bırak
+    def turn_left(self): pass
+    def turn_right(self): pass
 
-    def turn_right(self):
-        pass
-
+    # ---------- utils ----------
     def raw_servo_cmd(self, s: str):
         for tok in s.strip().split():
             if ':' in tok:
@@ -197,6 +213,6 @@ class RexMotion:
     def get_servo_states(self):
         return self.s[:8]
 
-# ───────────── Singleton ve shortcut ─────────────
+# ───────────── singleton & shortcut ─────────────
 rex = RexMotion()
 raw_servo_cmd = rex.raw_servo_cmd
