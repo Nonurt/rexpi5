@@ -46,14 +46,13 @@ except (ImportError, RuntimeError, NotImplementedError):
 # ───────────── Config ─────────────
 CFG_PATH = Path(__file__).with_name("config.json")
 DEFAULTS = {
-    "trim":          [-12, 10, -18, 12],   # FL, RL, RR, FR
+    "trim":          [-12, 10, -18, 12],
     "stance_height": 60,
     "big_step":      False,
-    "spd":           8,                    # mikro-adım ms  (eski: 5)
+    "spd":           8,
     "high":          10
 }
-TRIM_LIMIT = 60        # ±60 ° güvenlik
-
+TRIM_LIMIT = 60
 
 def _load_cfg():
     if CFG_PATH.exists():
@@ -63,7 +62,6 @@ def _load_cfg():
             print("[config] Geçersiz JSON – varsayılana dönüldü.")
     return DEFAULTS.copy()
 
-
 def _save_cfg(cfg):
     CFG_PATH.write_text(json.dumps(cfg, indent=2))
 
@@ -71,13 +69,12 @@ def _save_cfg(cfg):
 # ───────────── RexMotion ─────────────
 class RexMotion:
     SERVO_MIN, SERVO_MAX, FREQ = 125, 575, 50
-    HIP_CH  = (0, 2, 4, 6)           # FL, RL, RR, FR
+    HIP_CH  = (0, 2, 4, 6)
     LIFT_CH = (1, 3, 5, 7)
 
     FWD_DIR = {0: 180, 2: 180, 4: 0, 6: 0}
     BCK_DIR = {0: 0,   2: 0,   4: 180, 6: 180}
 
-    # ───────── init ─────────
     def __init__(self):
         if HW == "real":
             try:
@@ -92,28 +89,26 @@ class RexMotion:
         time.sleep(0.05)
 
         self.cfg = _load_cfg()
-        self.s   = [90] * 10          # son gönderilen açılar
+        self.s   = [None] * 16
         self.walking = False
         self.center_servos()
 
-    # ───────── low-level helpers ─────────
     @staticmethod
     def _pulse(angle: int) -> int:
         rng = RexMotion.SERVO_MAX - RexMotion.SERVO_MIN
         return int(angle / 180 * rng + RexMotion.SERVO_MIN)
 
     def _apply_trim(self, ch: int, angle: int) -> int:
-        """Trim + güvenli pencere clip (yansıtma yok!)."""
         if ch in self.HIP_CH:
             idx = self.HIP_CH.index(ch)
             t   = max(-TRIM_LIMIT, min(TRIM_LIMIT, self.cfg["trim"][idx]))
             angle += t
-        angle = max(15, min(165, angle))     # clip
+        angle = max(15, min(165, angle))
         return angle
 
     def write(self, ch: int, angle: int):
         ang = self._apply_trim(ch, angle)
-        if ang == self.s[ch]:          # değişmediyse PWM yazma → jitter yok
+        if self.s[ch] == ang:
             return
         duty = int(self._pulse(ang) * 65535 / 4096)
         self.pwm.channels[ch].duty_cycle = duty
@@ -121,7 +116,6 @@ class RexMotion:
         if HW == "mock":
             print(f"[mock] ch{ch} → {ang:3d}°")
 
-    # ───────── posture helpers ─────────
     def center_servos(self):
         for ch in self.HIP_CH:
             self.write(ch, 90)
@@ -135,7 +129,6 @@ class RexMotion:
     def lean_forward(self): self._srv(90,90,90,90,  60,120,120, 60)
     def lean_back(self):    self._srv(90,90,90,90, 120, 60, 60,120)
 
-    # ───────── micro-step core ─────────
     def _step_block(self, hips, lifts, spd):
         lifts = [l + self.cfg["high"] * 3 for l in lifts]
         done  = False
@@ -156,23 +149,20 @@ class RexMotion:
 
     def _srv(self, p11,p21,p31,p41, p12=None,p22=None,p32=None,p42=None,
              sp1=3,sp2=3,sp3=3,sp4=3):
-        """C-stil kısaltılmış servo bloğu."""
         p12 = p12 if p12 is not None else self.cfg["stance_height"]
         p22 = p22 if p22 is not None else self.cfg["stance_height"]
         p32 = p32 if p32 is not None else self.cfg["stance_height"]
         p42 = p42 if p42 is not None else self.cfg["stance_height"]
         self._step_block([p11,p21,p31,p41], [p12,p22,p32,p42], (sp1,sp2,sp3,sp4))
 
-    # ───────── hip helpers ─────────
-    def HIP_FWD(self, ch):   # öne kay
+    def HIP_FWD(self, ch):
         base = self.FWD_DIR[ch]
         return (30 if base == 0 else 150) if self.cfg["big_step"] else (60 if base == 0 else 120)
 
-    def HIP_BCK(self, ch):   # geriye kay
+    def HIP_BCK(self, ch):
         base = self.BCK_DIR[ch]
         return (30 if base == 0 else 150) if self.cfg["big_step"] else (60 if base == 0 else 120)
 
-    # ───────── busy helper ─────────
     def _busy(self):
         if self.walking:
             print("[GAIT] already running")
@@ -180,23 +170,18 @@ class RexMotion:
         self.walking = True
         return False
 
-    # ───────── Gait örnekleri ─────────
     def forward(self):
-        if self._busy():
-            return
+        if self._busy(): return
         try:
+            self.center_servos()
+            time.sleep(0.25)
             self._srv(self.HIP_BCK(0),  90,  90, self.HIP_FWD(6), 42,42,42,  6, 2,3,2,2)
             self._srv(self.HIP_BCK(0),  90,  90, self.HIP_FWD(6), 33,33,33, 42, 2,3,2,2)
-            self._srv(self.HIP_BCK(0), self.HIP_BCK(2), self.HIP_FWD(4), self.HIP_FWD(6),
-                      42,42, 6,42, 2,2,3,2)
-            self._srv(self.HIP_BCK(0), self.HIP_BCK(2), self.HIP_FWD(4), self.HIP_FWD(6),
-                      33,24,33,33, 2,2,3,2)
-            self._srv(self.HIP_FWD(0), self.HIP_BCK(2), self.HIP_FWD(4), self.HIP_BCK(6),
-                      6,42,42,42, 2,2,2,3)
-            self._srv(self.HIP_FWD(0), self.HIP_BCK(2), self.HIP_FWD(4), self.HIP_BCK(6),
-                      42, 6,33, 6, 2,2,2,3)
-            self._srv(self.HIP_FWD(0), self.HIP_FWD(2), self.HIP_BCK(4), self.HIP_BCK(6),
-                      42, 6,33,33, 3,2,2,2)
+            self._srv(self.HIP_BCK(0), self.HIP_BCK(2), self.HIP_FWD(4), self.HIP_FWD(6), 42,42, 6,42, 2,2,3,2)
+            self._srv(self.HIP_BCK(0), self.HIP_BCK(2), self.HIP_FWD(4), self.HIP_FWD(6), 33,24,33,33, 2,2,3,2)
+            self._srv(self.HIP_FWD(0), self.HIP_BCK(2), self.HIP_FWD(4), self.HIP_BCK(6), 6,42,42,42, 2,2,2,3)
+            self._srv(self.HIP_FWD(0), self.HIP_BCK(2), self.HIP_FWD(4), self.HIP_BCK(6), 42, 6,33, 6, 2,2,2,3)
+            self._srv(self.HIP_FWD(0), self.HIP_FWD(2), self.HIP_BCK(4), self.HIP_BCK(6), 42, 6,33,33, 3,2,2,2)
             self._srv(90,90,90,90, 33,33,33,33, 3,2,2,2)
         except Exception as e:
             print("[GAIT-ERR]", e)
@@ -204,22 +189,20 @@ class RexMotion:
             self.walking = False
 
     def back(self):
-        if self._busy():
-            return
+        if self._busy(): return
         try:
-            self._srv(self.HIP_FWD(0), self.HIP_FWD(2), self.HIP_BCK(4), self.HIP_BCK(6),
-                      42, 6,42,42, 2,3,2,2)
-            # ... (geri kalan fazlar aynı mantıkla devam) ...
+            self.center_servos()
+            time.sleep(0.25)
+            self._srv(self.HIP_FWD(0), self.HIP_FWD(2), self.HIP_BCK(4), self.HIP_BCK(6), 42, 6,42,42, 2,3,2,2)
             self._srv(90,90,90,90, 33,33,33,33, 3,2,2,2)
         except Exception as e:
             print("[GAIT-ERR]", e)
         finally:
             self.walking = False
 
-    def turn_left(self):   pass   # (isteğe göre ekleyin)
-    def turn_right(self):  pass
+    def turn_left(self): pass
+    def turn_right(self): pass
 
-    # ───────── utils ─────────
     def raw_servo_cmd(self, cmd: str):
         for tok in cmd.strip().split():
             if ':' in tok:
@@ -236,10 +219,9 @@ class RexMotion:
         self.save_cfg()
         self.center_servos()
 
-    def save_cfg(self):            _save_cfg(self.cfg)
-    def get_servo_states(self):    return self.s[:8]
+    def save_cfg(self): _save_cfg(self.cfg)
+    def get_servo_states(self): return self.s[:8]
 
 
-# ───────────── singleton & alias ─────────────
 rex = RexMotion()
 raw_servo_cmd = rex.raw_servo_cmd
