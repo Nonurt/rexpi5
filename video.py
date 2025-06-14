@@ -9,7 +9,8 @@
 import time, cv2, numpy as np
 from pathlib import Path
 from picamera2 import Picamera2
-from picamera2.previews import NullPreview
+from picamera2.previews import NullPreview  # Sadece NullPreview import edildi, pykms aranmaması için
+
 
 import models_cfg as cfg
 import movement, security
