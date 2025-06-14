@@ -1,66 +1,157 @@
-# === GEREKLİ MODÜLLER ===
-from flask import Flask, render_template, Response     # Web arayüzü ve video stream için Flask modülleri
-import cv2                                              # OpenCV ile kamera erişimi ve görüntü işleme
-import time                                             # FPS ayarı ve zamanlama için
-from routes import controller                           # Harici controller objesi, kamera ve kontrol yönetimi
+# ======================================
+#  web.py – Flask server for REX Pi 5
+# ======================================
+"""
+• Klasik gait rotaları (/forward, /back, /left, /right, /center)
+• /servo?cmd="0:120 6:30"   → ham servo yaz
+• /cfg  (GET/POST)          → JSON konfigürasyon
+• /trim?d=±1                → tüm kalça trim’ini adım adım ayarla
+• Kamera işleme toggles     → /track /gamma /hist /autostep
+• Yüz kaydetme & dedektör modu                → /facesave /detmode
+• MJPEG akışı               → /stream.mjpg
+"""
 
-app = Flask(__name__)
+from pathlib import Path
+from flask import Flask, send_from_directory, Response, request, jsonify
 
-# === VIDEO STREAMING ===
+import movement               # servo & gait mantığı
+import video                  # kamera + takip (security’e delege)
+import security               # yüz fotoğrafı kaydetme bayrağı
 
-def generate_frames():
-    """Generate video frames for streaming"""
-    while True:
-        if controller.current_frame is not None:
-            try:
-                ret, buffer = cv2.imencode('.jpg', controller.current_frame)
-                if ret:
-                    frame = buffer.tobytes()
-                    yield (b'--frame\r\n'
-                           b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
-            except Exception as e:
-                print(f"[ERROR] Frame encoding error: {e}")
+APP_ROOT   = Path(__file__).parent
+STATIC_DIR = APP_ROOT / "static"
+app        = Flask(__name__, static_folder=str(STATIC_DIR))
 
-        time.sleep(0.033)  # ~30 FPS
+# ──────────────────── UI root ───────────────────
+@app.get("/")
+def root():
+    return send_from_directory(app.static_folder, "index.html")
 
+# ────────────────── MJPEG stream ───────────────
+@app.get("/stream.mjpg")
+def stream():
+    def gen():
+        while True:
+            buf = video.next_frame()
+            if buf is None:
+                break
+            yield (b"--frame\r\n"
+                   b"Content-Type: image/jpeg\r\n\r\n" +
+                   buf +
+                   b"\r\n")
+    return Response(gen(), mimetype="multipart/x-mixed-replace; boundary=frame")
 
-# === FLASK ROUTES ===
+# ────────────── Config (/cfg) ────────────
+@app.route("/cfg", methods=["GET", "POST"])
+def cfg():
+    if request.method == "POST":
+        movement.rex.cfg.update(request.get_json(force=True) or {})
+        movement.rex.save_cfg()
+    return jsonify(movement.rex.cfg)
 
-@app.route('/')
-def index():
-    return render_template('index.html')
-
-
-@app.route('/video_feed')
-def video_feed():
-    return Response(generate_frames(),
-                    mimetype='multipart/x-mixed-replace; boundary=frame')
-
-
-if __name__ == '__main__':
+# ──────────── Quick-trim helper ─────────
+@app.get("/trim")
+def trim():
+    """/trim?d=1 → tüm hip trim +1; d=-1 → -1"""
     try:
-        print("=" * 50)
-        print("🕷️  ADVANCED SPIDER ROBOT CONTROL SYSTEM")
-        print("=" * 50)
-        print("🔧 Features:")
-        print("   ✅ AI Human Detection & Tracking")
-        print("   ✅ Advanced Camera Control (Pan/Tilt)")
-        print("   ✅ 4-Mode Power System (Low/Medium/High/Max)")
-        print("   ✅ ROI (Region of Interest) Zone Detection")
-        print("   ✅ Smooth Spider Movements")
-        print("   ✅ Web Interface Control")
-        print("   ✅ Real-time Video Streaming")
-        print("=" * 50)
-        print("🌐 Web Interface: http://localhost:5000")
-        print("📹 Video Stream: http://localhost:5000/video_feed")
-        print("=" * 50)
+        delta = int(request.args.get("d", "0"))
+    except ValueError:
+        delta = 0
+    if delta:
+        movement.rex.adjust_trim(delta)
+    return jsonify({"trim": movement.rex.cfg["trim"]})
 
-        app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)
+# ──────────── Raw servo ───────────
+@app.get("/servo")
+def servo():
+    cmd = request.args.get("cmd", "")
+    if cmd:
+        movement.raw_servo_cmd(cmd)
+    return "OK"
 
-    except KeyboardInterrupt:
-        print("\n[INFO] Shutting down...")
-        controller.stop_camera()
-        print("[INFO] System stopped safely")
-    except Exception as e:
-        print(f"[ERROR] System error: {e}")
-        controller.stop_camera()
+# ──────────── Gait routes ────────────
+@app.get("/forward")
+@app.get("/back")
+@app.get("/left")
+@app.get("/right")
+@app.get("/center")
+def gait():
+    actions = {
+        "/forward": movement.rex.forward,
+        "/back"   : movement.rex.back,
+        "/left"   : movement.rex.turn_left,
+        "/right"  : movement.rex.turn_right,
+        "/center" : movement.rex.center_servos,
+    }
+    actions[request.path]()
+    return "OK"
+
+# ──────────── Lean helper ───────────
+@app.get("/lean")
+def lean():
+    dir_ = request.args.get("dir", "")
+    getattr(movement.rex, f"lean_{dir_}", lambda: None)()
+    return "OK"
+
+# ──────────── Toggles (cam proc) ─────────
+@app.get("/track")
+def tog_track():
+    video.TRACK = bool(int(request.args.get("v", "0")))
+    return "ON" if video.TRACK else "OFF"
+
+@app.get("/autostep")
+def tog_step():
+    video.AUTOSTEP = video.APPROACH = bool(int(request.args.get("v", "0")))
+    return "ON" if video.AUTOSTEP else "OFF"
+
+@app.get("/gamma")
+def tog_gamma():
+    video.AUTO_GAMMA = bool(int(request.args.get("v", "0")))
+    return "ON" if video.AUTO_GAMMA else "OFF"
+
+@app.get("/hist")
+def tog_hist():
+    video.AUTO_HIST = bool(int(request.args.get("v", "0")))
+    return "ON" if video.AUTO_HIST else "OFF"
+
+# ──────────── Face-save & mode ──────────
+@app.get("/facesave")
+def tog_facesave():
+    security.SAVE_FACE_IMAGES = bool(int(request.args.get("v", "0")))
+    return "ON" if security.SAVE_FACE_IMAGES else "OFF"
+
+@app.get("/detmode")          # m = person | face | both
+def detector_mode():
+    m = request.args.get("m", "both")
+    if m not in {"person", "face", "both"}:
+        return "ERR", 400
+    video.DETECT_MODE = m
+    return m
+
+# ──────────── Target list / select ───────
+@app.get("/targets")
+def targets():
+    return jsonify(video.get_targets())
+
+@app.get("/target")
+def target():
+    tid = request.args.get("id")
+    video.set_target(int(tid) if tid else None)
+    return "OK"
+
+# ──────────── Status JSON ─────────
+@app.get("/status")
+def status():
+    return jsonify({
+        "track"        : video.TRACK,
+        "autostep"     : video.AUTOSTEP,
+        "gamma"        : video.AUTO_GAMMA,
+        "hist"         : video.AUTO_HIST,
+        "facesave"     : security.SAVE_FACE_IMAGES,
+        "detector_mode": video.DETECT_MODE,
+        "stance"       : movement.rex.cfg.get("stance_height", 60)
+    })
+
+# ──────────── Run ────────────
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8080)
