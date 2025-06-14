@@ -4,7 +4,7 @@ import threading
 from flask import Flask
 from camera_tracker import CameraTracker
 from ai_model import AIModel
-from servo_controller import HumanTrackingServoController
+from rex_gait import RexGait  # Changed from HumanTrackingServoController
 from web_interface import app, init_web_interface
 
 
@@ -16,8 +16,8 @@ class MainController:
         # Initialize AI Model first
         self.ai_model = AIModel()
 
-        # Initialize Servo Controller
-        self.servo_controller = HumanTrackingServoController()
+        # Initialize Servo Controller - now using RexGait which inherits all functionality
+        self.servo_controller = RexGait()
 
         # Initialize Camera Tracker (with references to other components)
         self.camera_tracker = CameraTracker(self)
