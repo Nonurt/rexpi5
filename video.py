@@ -1,15 +1,18 @@
-# ---- video.py : pykms/kms STUB ------------------------------
+# ---- video.py : pykms / kms STUB (DRM Preview kapalı) --------
 import sys, types
 
-_stub = types.ModuleType("kms")          # yalancı kms modülü
-class _PixFmt:
-    RGB888   = 0
-    XRGB8888 = 0
-_stub.PixelFormat = _PixFmt
+class _FakePixelFormat:
+    """İstenen her özniteliği 0 döndürür; BGR888, XRGB8888 vb. hepsi kabul edilir."""
+    def __getattr__(self, name):
+        return 0
 
-sys.modules["kms"]   = _stub             # 'kms'  adıyla kaydet
-sys.modules["pykms"] = _stub             # 'pykms' adıyla kaydet
-# -------------------------------------------------------------
+_stub = types.ModuleType("kms")
+_stub.PixelFormat = _FakePixelFormat()
+
+# Hem 'kms' hem 'pykms' adlarıyla Python'a kaydet
+sys.modules["kms"]   = _stub
+sys.modules["pykms"] = _stub
+# --------------------------------------------------------------
 
 import time, cv2, numpy as np
 from picamera2 import Picamera2
@@ -17,15 +20,15 @@ from picamera2.previews import NullPreview
 import models_cfg as cfg
 import movement, security
 
-# Kamera başlatma
+# ------ Kamera başlatma ---------------------------------------
 W, H = 320, 240
 picam2 = Picamera2()
 picam2.configure(picam2.create_preview_configuration(main={"size": (W, H)}))
-picam2.start_preview(NullPreview())      # DRM preview devre dışı
+picam2.start_preview(NullPreview())      # DRM / pykms devre dışı
 picam2.start()
 time.sleep(1)
 print(f"[VIDEO] Picamera2 ready: {W}×{H}")
-
+# --------------------------------------------------------------
 # … (dosyanın geri kalanı değişmeden devam eder)
 
 
