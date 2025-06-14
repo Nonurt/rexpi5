@@ -33,12 +33,11 @@ def stream():
             buf = video.next_frame()
             if buf is None:
                 break
-            yield (b"--frame
-Content-Type: image/jpeg
+            yield (b"--frame\r\n"
+                   b"Content-Type: image/jpeg\r\n\r\n" +
+                   buf +
+                   b"\r\n")
 
-" +
-                   buf + b"
-")
     return Response(gen(), mimetype="multipart/x-mixed-replace; boundary=frame")
 
 # ───────────────────────── Config (/cfg) ────────────────────
