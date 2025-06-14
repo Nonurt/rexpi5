@@ -161,7 +161,9 @@ def target():
 def toggle_camtrack():
     v = request.args.get("v", "0")
     video.TRACK = bool(int(v))
-    return "ON" if video.TRACK else "OFF
+    return "ON" if video.TRACK else "OFF"
+
+
 # ──────────── Status JSON ─────────
 @app.get("/status")
 def status():
