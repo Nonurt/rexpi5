@@ -157,7 +157,11 @@ def target():
     tid = request.args.get("id")
     video.set_target(int(tid) if tid else None)
     return "OK"
-
+@app.get("/camtrack")
+def toggle_camtrack():
+    v = request.args.get("v", "0")
+    video.TRACK = bool(int(v))
+    return "ON" if video.TRACK else "OFF
 # ──────────── Status JSON ─────────
 @app.get("/status")
 def status():

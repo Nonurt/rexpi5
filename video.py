@@ -29,10 +29,6 @@ picam2.start()
 time.sleep(1)
 print(f"[VIDEO] Picamera2 ready: {W}×{H}")
 # --------------------------------------------------------------
-# … (dosyanın geri kalanı değişmeden devam eder)
-
-
-# ... devam eden kodlar ...
 
 # DNN modelleri yükleme
 face_net = cv2.dnn.readNetFromCaffe(str(cfg.FACE_PROTO), str(cfg.FACE_MODEL))
@@ -98,7 +94,8 @@ def next_frame():
                 if int(cls) == cfg.PERSON_CLASS_ID and conf > 0.4:
                     cx, cy, w, h = (np.array(xywh) * [W, W, W, H]).astype(int)
                     x1, y1 = int(cx - w / 2), int(cy - h / 2)
-                    p_boxes.append((x1, y1, x1 + w, y1 + h))
+                    x2, y2 = x1 + w, y1 + h
+                    p_boxes.append((x1, y1, x2, y2))
 
     # Yüz kutuları (SSD Caffe)
     f_boxes = []
@@ -111,7 +108,7 @@ def next_frame():
                 x1, y1, x2, y2 = (det[0, 0, i, 3:7] * [W, H, W, H]).astype(int)
                 f_boxes.append((x1, y1, x2, y2))
 
-    # Hedef seçimi
+    # Yüz takip ID atama
     tracked = security.assign_ids(frame, f_boxes)
     tgt = None
     if security.TARGET_ID is not None:
@@ -126,9 +123,15 @@ def next_frame():
         x1, y1, x2, y2 = max(p_boxes, key=lambda b: (b[2]-b[0])*(b[3]-b[1]))
         tgt = (x1, y1, x2, y2, (x1 + x2) // 2, (y1 + y2) // 2)
 
+    # ROI kutuları (clip ile)
     for (x1, y1, x2, y2) in p_boxes:
+        x1, y1 = max(0, x1), max(0, y1)
+        x2, y2 = min(W - 1, x2), min(H - 1, y2)
         cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 120, 255), 1)
+
     for fid, (x1, y1, x2, y2, cx, cy) in tracked:
+        x1, y1 = max(0, x1), max(0, y1)
+        x2, y2 = min(W - 1, x2), min(H - 1, y2)
         col = (0, 255, 0) if fid == security.TARGET_ID else (255, 200, 0)
         cv2.rectangle(frame, (x1, y1), (x2, y2), col, 2)
         cv2.putText(frame, str(fid), (x1 + 2, y1 + 14), 0, 0.45, col, 1, cv2.LINE_AA)

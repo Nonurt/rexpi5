@@ -34,6 +34,21 @@
 
     <h3>Path Visualization</h3>
     <img src="/static/path_draw.png" width="320" height="320" alt="Path">
+
+    <!-- Kamera Kontrolü için eklendi -->
+    <h2>Camera Control</h2>
+    <div class="row">
+      <label for="panSlider">Pan: <span id="panValue">90</span>°</label>
+      <input type="range" id="panSlider" min="0" max="180" value="90">
+    </div>
+    <div class="row">
+      <label for="tiltSlider">Tilt: <span id="tiltValue">90</span>°</label>
+      <input type="range" id="tiltSlider" min="0" max="180" value="90">
+    </div>
+    <div class="row">
+      <button id="camTrackBtn" class="tgl">Camera Track OFF</button>
+    </div>
+
   </div>
 
   <!-- RIGHT: controls -->

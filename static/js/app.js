@@ -16,6 +16,12 @@ const stv          = document.getElementById("stv");
 const raw          = document.getElementById("raw");
 const sendRaw      = document.getElementById("sendRaw");
 
+const panSlider    = document.getElementById("panSlider");
+const tiltSlider   = document.getElementById("tiltSlider");
+const panValue     = document.getElementById("panValue");
+const tiltValue    = document.getElementById("tiltValue");
+const camTrackBtn  = document.getElementById("camTrackBtn");
+
 /* ——— basit API çağrısı ——— */
 const api = (p, opt = undefined) =>
   fetch(p.startsWith("/") ? p : "/" + p, opt);
@@ -107,4 +113,25 @@ document.addEventListener("DOMContentLoaded", () => {
       st.value = j.stance_height || 60;
       stv.textContent = st.value;
     });
+
+  /* Kamera pan/tilt slider eventleri */
+  panSlider.oninput = (e) => {
+    let val = e.target.value;
+    panValue.textContent = val;
+    api(`/servo?cmd=8:${val}`);
+  };
+
+  tiltSlider.oninput = (e) => {
+    let val = e.target.value;
+    tiltValue.textContent = val;
+    api(`/servo?cmd=9:${val}`);
+  };
+
+  /* Kamera takip butonu */
+  camTrackBtn.onclick = () => {
+    const on = !camTrackBtn.classList.contains("on");
+    camTrackBtn.classList.toggle("on", on);
+    camTrackBtn.textContent = camTrackBtn.textContent.replace(on ? "OFF" : "ON", on ? "ON" : "OFF");
+    api("/camtrack?v=" + (on ? 1 : 0));
+  };
 });

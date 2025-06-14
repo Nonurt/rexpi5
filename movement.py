@@ -42,7 +42,6 @@ except (ImportError, RuntimeError, NotImplementedError):
     PCA9685 = _MockPCA9685
     SCL = SDA = None
 
-
 # ───────────── Config ─────────────
 CFG_PATH = Path(__file__).with_name("config.json")
 DEFAULTS = {
@@ -64,7 +63,6 @@ def _load_cfg():
 
 def _save_cfg(cfg):
     CFG_PATH.write_text(json.dumps(cfg, indent=2))
-
 
 # ───────────── RexMotion ─────────────
 class RexMotion:
@@ -117,28 +115,59 @@ class RexMotion:
             print(f"[mock] ch{ch} → {ang:3d}°")
 
     def center_servos(self):
-        # Mutlak açı gönderimiyle
-        self.raw_servo_cmd("0:90 2:90 4:90 6:90 1:{} 3:{} 5:{} 7:{}".format(
-            self.cfg["stance_height"],
-            self.cfg["stance_height"],
-            self.cfg["stance_height"],
-            self.cfg["stance_height"],
-        ))
+        for ch in self.HIP_CH:
+            self.write(ch, 90)
+        for ch in self.LIFT_CH:
+            self.write(ch, self.cfg["stance_height"])
 
     def stabilize(self):
-        self.raw_servo_cmd("0:90 2:90 4:90 6:90")
+        self._srv(90, 90, 90, 90,
+                  self.cfg["stance_height"], self.cfg["stance_height"],
+                  self.cfg["stance_height"], self.cfg["stance_height"],
+                  4, 4, 4, 4)
 
     def lean_left(self):
-        self.raw_servo_cmd("0:90 2:90 4:90 6:90 1:60 3:60 5:120 7:120")
-
+        self.raw_servo_cmd("1:60 3:60 5:120 7:120")
     def lean_right(self):
-        self.raw_servo_cmd("0:90 2:90 4:90 6:90 1:120 3:120 5:60 7:60")
-
+        self.raw_servo_cmd("1:120 3:120 5:60 7:60")
     def lean_forward(self):
-        self.raw_servo_cmd("0:90 2:90 4:90 6:90 1:60 3:120 5:120 7:60")
-
+        self.raw_servo_cmd("1:60 3:120 5:120 7:60")
     def lean_back(self):
-        self.raw_servo_cmd("0:90 2:90 4:90 6:90 1:120 3:60 5:60 7:120")
+        self.raw_servo_cmd("1:120 3:60 5:60 7:120")
+
+    def _step_block(self, hips, lifts, spd):
+        lifts = [l + self.cfg["high"] * 3 for l in lifts]
+        done  = False
+        while not done:
+            done = True
+            for i, ch in enumerate(self.HIP_CH):
+                cur, tgt = self.s[ch], hips[i]
+                if cur != tgt:
+                    self.write(ch, cur + (spd[i] if cur < tgt else -spd[i]))
+                    done = False
+            for i, ch in enumerate(self.LIFT_CH):
+                cur, tgt = self.s[ch], lifts[i]
+                if cur != tgt:
+                    self.write(ch, cur + (spd[i] if cur < tgt else -spd[i]))
+                    done = False
+            if not done:
+                time.sleep(self.cfg["spd"] / 1000)
+
+    def _srv(self, p11,p21,p31,p41, p12=None,p22=None,p32=None,p42=None,
+             sp1=3,sp2=3,sp3=3,sp4=3):
+        p12 = p12 if p12 is not None else self.cfg["stance_height"]
+        p22 = p22 if p22 is not None else self.cfg["stance_height"]
+        p32 = p32 if p32 is not None else self.cfg["stance_height"]
+        p42 = p42 if p42 is not None else self.cfg["stance_height"]
+        self._step_block([p11,p21,p31,p41], [p12,p22,p32,p42], (sp1,sp2,sp3,sp4))
+
+    def HIP_FWD(self, ch):
+        base = self.FWD_DIR[ch]
+        return (30 if base == 0 else 150) if self.cfg["big_step"] else (60 if base == 0 else 120)
+
+    def HIP_BCK(self, ch):
+        base = self.BCK_DIR[ch]
+        return (30 if base == 0 else 150) if self.cfg["big_step"] else (60 if base == 0 else 120)
 
     def _busy(self):
         if self.walking:
@@ -151,27 +180,32 @@ class RexMotion:
         if self._busy():
             return
         try:
-            # Her hareket preset mutlak açı ile başlar
             self.center_servos()
             time.sleep(0.25)
-            # Hareket adımları (örnek, ilerleyerek açılar)
-            self.raw_servo_cmd("0:30 2:90 4:90 6:150 1:42 3:42 5:42 7:6")
-            time.sleep(0.3)
-            self.raw_servo_cmd("0:30 2:90 4:90 6:150 1:33 3:33 5:33 7:42")
-            time.sleep(0.3)
-            self.raw_servo_cmd("0:30 2:30 4:150 6:150 1:42 3:42 5:6 7:42")
-            time.sleep(0.3)
-            self.raw_servo_cmd("0:30 2:30 4:150 6:150 1:33 3:24 5:33 7:33")
-            time.sleep(0.3)
-            self.raw_servo_cmd("0:150 2:30 4:150 6:30 1:6 3:42 5:42 7:42")
-            time.sleep(0.3)
-            self.raw_servo_cmd("0:150 2:30 4:150 6:30 1:42 3:6 5:33 7:6")
-            time.sleep(0.3)
-            self.raw_servo_cmd("0:150 2:150 4:30 6:30 1:42 3:6 5:33 7:33")
-            time.sleep(0.3)
+            self.raw_servo_cmd(f"0:{self.HIP_BCK(0)} 1:42 2:90 3:42 4:90 5:42 6:{self.HIP_FWD(6)}")
+            time.sleep(self.cfg["spd"] / 1000)
+
+            self.raw_servo_cmd(f"0:{self.HIP_BCK(0)} 1:33 2:90 3:33 4:90 5:33 6:42")
+            time.sleep(self.cfg["spd"] / 1000)
+
+            self.raw_servo_cmd(f"0:{self.HIP_BCK(0)} 2:{self.HIP_BCK(2)} 4:{self.HIP_FWD(4)} 6:{self.HIP_FWD(6)} 1:42 3:42 5:6 7:42")
+            time.sleep(self.cfg["spd"] / 1000)
+
+            self.raw_servo_cmd(f"0:{self.HIP_BCK(0)} 2:{self.HIP_BCK(2)} 4:{self.HIP_FWD(4)} 6:{self.HIP_FWD(6)} 1:33 3:24 5:33 7:33")
+            time.sleep(self.cfg["spd"] / 1000)
+
+            self.raw_servo_cmd(f"0:{self.HIP_FWD(0)} 2:{self.HIP_BCK(2)} 4:{self.HIP_FWD(4)} 6:{self.HIP_BCK(6)} 1:6 3:42 5:42 7:42")
+            time.sleep(self.cfg["spd"] / 1000)
+
+            self.raw_servo_cmd(f"0:{self.HIP_FWD(0)} 2:{self.HIP_BCK(2)} 4:{self.HIP_FWD(4)} 6:{self.HIP_BCK(6)} 1:42 3:6 5:33 7:6")
+            time.sleep(self.cfg["spd"] / 1000)
+
+            self.raw_servo_cmd(f"0:{self.HIP_FWD(0)} 2:{self.HIP_FWD(2)} 4:{self.HIP_BCK(4)} 6:{self.HIP_BCK(6)} 1:42 3:6 5:33 7:33")
+            time.sleep(self.cfg["spd"] / 1000)
+
             self.center_servos()
         except Exception as e:
-            print("[GAIT-ERR]", e)
+            print("[GAIT-ERR] forward:", e)
         finally:
             self.walking = False
 
@@ -181,30 +215,49 @@ class RexMotion:
         try:
             self.center_servos()
             time.sleep(0.25)
-            self.raw_servo_cmd("0:150 2:150 4:30 6:30 1:42 3:6 5:42 7:42")
-            time.sleep(0.3)
+
+            self.raw_servo_cmd(f"0:{self.HIP_FWD(0)} 2:{self.HIP_FWD(2)} 4:{self.HIP_BCK(4)} 6:{self.HIP_BCK(6)} 1:42 3:6 5:42 7:42")
+            time.sleep(self.cfg["spd"] / 1000)
+
+            self.raw_servo_cmd(f"0:{self.HIP_FWD(0)} 2:{self.HIP_FWD(2)} 4:{self.HIP_BCK(4)} 6:{self.HIP_BCK(6)} 1:33 3:33 5:33 7:42")
+            time.sleep(self.cfg["spd"] / 1000)
+
+            self.raw_servo_cmd(f"0:{self.HIP_FWD(0)} 1:42 2:90 3:6 4:90 5:42 6:{self.HIP_BCK(6)}")
+            time.sleep(self.cfg["spd"] / 1000)
+
+            self.raw_servo_cmd(f"0:{self.HIP_FWD(0)} 1:24 2:33 3:33 4:33 5:33 6:{self.HIP_BCK(6)}")
+            time.sleep(self.cfg["spd"] / 1000)
+
+            self.raw_servo_cmd(f"0:{self.HIP_BCK(0)} 2:{self.HIP_BCK(2)} 4:{self.HIP_FWD(4)} 6:{self.HIP_FWD(6)} 1:6 3:42 5:42 7:42")
+            time.sleep(self.cfg["spd"] / 1000)
+
+            self.raw_servo_cmd(f"0:{self.HIP_BCK(0)} 2:{self.HIP_BCK(2)} 4:{self.HIP_FWD(4)} 6:{self.HIP_FWD(6)} 1:42 3:33 5:33 7:6")
+            time.sleep(self.cfg["spd"] / 1000)
+
+            self.raw_servo_cmd(f"0:{self.HIP_BCK(0)} 1:42 2:90 3:6 4:90 5:33 6:{self.HIP_FWD(6)}")
+            time.sleep(self.cfg["spd"] / 1000)
+
             self.center_servos()
         except Exception as e:
-            print("[GAIT-ERR]", e)
+            print("[GAIT-ERR] back:", e)
         finally:
             self.walking = False
 
     def turn_left(self):
-        # İstersen benzer mutlak servo komutları tanımlayabilirim
+        # İstersen burayı C++'daki gibi yazabiliriz, veya basit placeholder bırakabiliriz
         pass
 
     def turn_right(self):
-        # İstersen benzer mutlak servo komutları tanımlayabilirim
         pass
 
     def raw_servo_cmd(self, cmd: str):
-        # Slider hareketi gibi mutlak servo açı komutlarını işler
+        # Servo kanal:açı formatında gelen komutları işleyen fonksiyon
         for tok in cmd.strip().split():
             if ':' in tok:
                 ch, ang = tok.split(':')
                 if ch.isdigit() and ang.lstrip('-').isdigit():
                     ch_i, ang_i = int(ch), int(ang)
-                    if 0 <= ch_i <= 7:
+                    if 0 <= ch_i <= 15:
                         self.write(ch_i, ang_i)
 
     def adjust_trim(self, delta: int):
@@ -214,9 +267,12 @@ class RexMotion:
         self.save_cfg()
         self.center_servos()
 
-    def save_cfg(self): _save_cfg(self.cfg)
-    def get_servo_states(self): return self.s[:8]
+    def save_cfg(self):
+        _save_cfg(self.cfg)
 
+    def get_servo_states(self):
+        return self.s[:8]
 
+# ───────────── singleton & alias ─────────────
 rex = RexMotion()
 raw_servo_cmd = rex.raw_servo_cmd
