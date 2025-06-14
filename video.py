@@ -1,17 +1,15 @@
-# ── video.py: pykms / kms STUB BLOĞU ─────────────────────────
+# ---- video.py : pykms/kms STUB ------------------------------
 import sys, types
 
-_stub = types.ModuleType("kms")          # yalancı KMS modülü
-class _PixFmt:                           # DrmPreview’in kullandığı enum
+_stub = types.ModuleType("kms")          # yalancı kms modülü
+class _PixFmt:
     RGB888   = 0
     XRGB8888 = 0
-_stub.PixelFormat = _PixFmt              # enum’u ekle
+_stub.PixelFormat = _PixFmt
 
-# Hem 'kms' hem de 'pykms' adıyla Python’a tanıt
-sys.modules["kms"]   = _stub
-sys.modules["pykms"] = _stub
-# ─────────────────────────────────────────────────────────────
-────────────────────────────────────────────────
+sys.modules["kms"]   = _stub             # 'kms'  adıyla kaydet
+sys.modules["pykms"] = _stub             # 'pykms' adıyla kaydet
+# -------------------------------------------------------------
 
 import time, cv2, numpy as np
 from picamera2 import Picamera2
@@ -23,10 +21,13 @@ import movement, security
 W, H = 320, 240
 picam2 = Picamera2()
 picam2.configure(picam2.create_preview_configuration(main={"size": (W, H)}))
-picam2.start_preview(NullPreview())     # DRM/pykms yok → sorunsuz
+picam2.start_preview(NullPreview())      # DRM preview devre dışı
 picam2.start()
 time.sleep(1)
 print(f"[VIDEO] Picamera2 ready: {W}×{H}")
+
+# … (dosyanın geri kalanı değişmeden devam eder)
+
 
 # ... devam eden kodlar ...
 
