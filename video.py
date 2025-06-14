@@ -1,17 +1,13 @@
-# video.py – Kamera, algılama ve servo takibi (Picamera2 sürümü)
-# ──────────────────────────────────────────────────────────────
-# • Yüz (SSD-ResNet) + İnsan (YOLOv4-tiny) algılama
-# • DETECT_MODE = "person" / "face" / "both"
-# • Mesafe kestirimi (en büyük insan kutusundan)
-# • Otomatik pan-tilt servo takibi (CH 8-9)
-# • FPS ölçümü ve gamma/histogram iyileştirme
+# ── video.py başı ─────────────────────────────────────────────
+import sys, types
+# pykms / kms gereksiz → boş modül olarak taklit et
+sys.modules['kms'] = types.ModuleType('kms')
+sys.modules['pykms'] = types.ModuleType('pykms')
+# ───────────────────────────────────────────────────────────────
 
 import time, cv2, numpy as np
-from pathlib import Path
 from picamera2 import Picamera2
-from picamera2.previews import NullPreview  # Sadece NullPreview import edildi, pykms aranmaması için
-
-
+from picamera2.previews import NullPreview
 import models_cfg as cfg
 import movement, security
 
@@ -19,11 +15,10 @@ import movement, security
 W, H = 320, 240
 picam2 = Picamera2()
 picam2.configure(picam2.create_preview_configuration(main={"size": (W, H)}))
-picam2.start_preview(NullPreview())  # Preview hatasını çözer
+picam2.start_preview(NullPreview())     # DRM/pykms yok → sorunsuz
 picam2.start()
-time.sleep(1)  # Kamera hazır olması için kısa bekleme
-
-print(f"[VIDEO] Picamera2 başlatıldı: {W}×{H}")
+time.sleep(1)
+print(f"[VIDEO] Picamera2 ready: {W}×{H}")
 
 # ... devam eden kodlar ...
 
