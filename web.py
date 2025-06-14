@@ -13,7 +13,7 @@
 
 from pathlib import Path
 from flask import Flask, send_from_directory, Response, request, jsonify
-import threading
+import threading, functools
 
 import movement               # servo & gait mantığı
 import video                  # kamera + takip (security’e delege)
@@ -73,6 +73,7 @@ def servo():
 gait_lock = threading.Lock()
 
 def enqueue_gait(fn):
+    @functools.wraps(fn)
     def wrapped():
         with gait_lock:
             fn()
@@ -82,27 +83,27 @@ def enqueue_gait(fn):
 @app.get("/forward")
 @enqueue_gait
 def gait_forward():
-    return movement.rex.forward()
+    movement.rex.forward()
 
 @app.get("/back")
 @enqueue_gait
 def gait_back():
-    return movement.rex.back()
+    movement.rex.back()
 
 @app.get("/left")
 @enqueue_gait
 def gait_left():
-    return movement.rex.turn_left()
+    movement.rex.turn_left()
 
 @app.get("/right")
 @enqueue_gait
 def gait_right():
-    return movement.rex.turn_right()
+    movement.rex.turn_right()
 
 @app.get("/center")
 @enqueue_gait
 def gait_center():
-    return movement.rex.center_servos()
+    movement.rex.center_servos()
 
 # ──────────── Lean helper ───────────
 @app.get("/lean")
