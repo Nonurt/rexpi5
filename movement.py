@@ -1,4 +1,3 @@
-# movement.py
 """
 Cross-platform motion engine for the REX quadruped.
 ────────────────────────────────────────────────────────
@@ -6,18 +5,29 @@ Cross-platform motion engine for the REX quadruped.
 • Falls back to a harmless mock on Windows so you can develop & test
 """
 
-# ───────────── Imports & HW mock ─────────────
-import json, time
+# ───────────── Imports & HW detection ─────────────
+import json, time, platform
 from pathlib import Path
 
-try:  # ⇢ real Pi environment
-    import busio
-    from board import SCL, SDA
-    from adafruit_pca9685 import PCA9685
-    HW = "real"
-except (ImportError, NotImplementedError, RuntimeError):
+def is_raspberry_pi():
+    system = platform.system()
+    machine = platform.machine().lower()
+    return system == "Linux" and any(arch in machine for arch in ["arm", "aarch64"])
+
+IS_PI = is_raspberry_pi()
+
+try:
+    if IS_PI:
+        import busio
+        from board import SCL, SDA
+        from adafruit_pca9685 import PCA9685
+        HW = "real"
+        print("[movement] Gerçek PCA9685 aktif (Raspberry Pi).")
+    else:
+        raise ImportError("Non-RPi Linux")
+except (ImportError, NotImplementedError, RuntimeError) as e:
     HW = "mock"
-    print("[movement] Mock PCA9685 modu aktif (Windows veya test ortamı).")
+    print(f"[movement] Mock PCA9685 modu aktif (test ortamı): {e}")
 
     class _MockChannel:
         duty_cycle = 0
@@ -33,6 +43,7 @@ except (ImportError, NotImplementedError, RuntimeError):
     busio = None
     PCA9685 = _MockPCA9685
     SCL = SDA = None
+
 
 # ───────────── Config handling ───────────────
 CFG_PATH = Path(__file__).with_name("config.json")
