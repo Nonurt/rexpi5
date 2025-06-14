@@ -1,9 +1,17 @@
-# ── video.py başı ─────────────────────────────────────────────
+# ── video.py: pykms / kms STUB BLOĞU ─────────────────────────
 import sys, types
-# pykms / kms gereksiz → boş modül olarak taklit et
-sys.modules['kms'] = types.ModuleType('kms')
-sys.modules['pykms'] = types.ModuleType('pykms')
-# ───────────────────────────────────────────────────────────────
+
+_stub = types.ModuleType("kms")          # yalancı KMS modülü
+class _PixFmt:                           # DrmPreview’in kullandığı enum
+    RGB888   = 0
+    XRGB8888 = 0
+_stub.PixelFormat = _PixFmt              # enum’u ekle
+
+# Hem 'kms' hem de 'pykms' adıyla Python’a tanıt
+sys.modules["kms"]   = _stub
+sys.modules["pykms"] = _stub
+# ─────────────────────────────────────────────────────────────
+────────────────────────────────────────────────
 
 import time, cv2, numpy as np
 from picamera2 import Picamera2
