@@ -10,6 +10,13 @@
 import time, cv2, numpy as np
 from pathlib import Path
 from picamera2 import Picamera2
+from picamera2.previews import NullPreview
+
+picam2 = Picamera2()
+picam2.configure(picam2.create_preview_configuration(main={"size": (W, H)}))
+picam2.start_preview(NullPreview())  # <=== preview hatasını çözer
+picam2.start()
+
 import models_cfg as cfg
 import movement, security
 
