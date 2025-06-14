@@ -4,8 +4,9 @@ import threading
 from flask import Flask
 from camera_tracker import CameraTracker
 from ai_model import AIModel
-from rex_gait import RexGait  # Changed from HumanTrackingServoController
+from rex_gait import RexGait
 from web_interface import app, init_web_interface
+import os
 
 
 class MainController:
@@ -16,10 +17,22 @@ class MainController:
         # Initialize AI Model first
         self.ai_model = AIModel()
 
-        # Initialize Servo Controller - now using RexGait which inherits all functionality
+        # Initialize Servo Controller
         self.servo_controller = RexGait()
 
-        # Initialize Camera Tracker (with references to other components)
+        # Add attributes expected by camera_tracker
+        self.power_mode = "medium"
+        self.camera_smooth_delay = 0.05
+        self.camera_limits = {
+            'pan_min': 30,
+            'pan_max': 150,
+            'tilt_min': 30,
+            'tilt_max': 150
+        }
+        self.camera_pan_angle = 90
+        self.camera_tilt_angle = 90
+
+        # Initialize Camera Tracker
         self.camera_tracker = CameraTracker(self)
 
         # Configure web interface
@@ -38,6 +51,12 @@ class MainController:
         print("[SYSTEM] Starting system components...")
 
         try:
+            # Verify model files exist
+            if not os.path.exists("models/MobileNetSSD_deploy.prototxt"):
+                raise FileNotFoundError("Missing model prototxt file")
+            if not os.path.exists("models/MobileNetSSD_deploy.caffemodel"):
+                raise FileNotFoundError("Missing model weights file")
+
             # Start camera
             if not self.camera_tracker.start_camera():
                 raise RuntimeError("Failed to start camera")
@@ -77,19 +96,39 @@ class MainController:
         """Get current system status"""
         return {
             'system_ready': self.system_ready,
-            'camera_running': self.camera_tracker.is_camera_running,
+            'camera_running': getattr(self.camera_tracker, 'is_camera_running', False),
             'ai_model_loaded': self.ai_model.net is not None,
-            'tracking_active': self.camera_tracker.tracking_enabled,
-            'camera_tracking': self.camera_tracker.camera_tracking,
+            'tracking_active': getattr(self.camera_tracker, 'tracking_enabled', False),
+            'camera_tracking': getattr(self.camera_tracker, 'camera_tracking', False),
             'servos_active': not self.servo_controller.walking,
-            'human_detected': self.camera_tracker.human_detected,
-            'human_distance': self.camera_tracker.human_distance
+            'human_detected': getattr(self.camera_tracker, 'human_detected', False),
+            'human_distance': getattr(self.camera_tracker, 'human_distance', 0),
+            'power_mode': self.power_mode
         }
 
 
 def run_flask_app():
     """Run the Flask web interface"""
     print("[WEB] Starting web interface...")
+    # Ensure templates folder exists
+    if not os.path.exists("templates"):
+        os.makedirs("templates")
+        # Create basic index.html if missing
+        if not os.path.exists("templates/index.html"):
+            with open("templates/index.html", "w") as f:
+                f.write("""<!DOCTYPE html>
+<html>
+<head>
+    <title>REX Control Interface</title>
+</head>
+<body>
+    <h1>REX Robot Control Interface</h1>
+    <div id="status">
+        <p>System Status: <span id="system-status">Loading...</span></p>
+    </div>
+</body>
+</html>""")
+
     app.run(host='0.0.0.0', port=5000, threaded=True, use_reloader=False)
 
 
@@ -111,7 +150,6 @@ def main():
         print("Control interface available at: http://localhost:5000")
 
         while not controller.shutdown_flag:
-            # Just keep the main thread alive
             time.sleep(1)
 
     except KeyboardInterrupt:
