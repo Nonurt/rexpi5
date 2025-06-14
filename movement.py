@@ -117,51 +117,28 @@ class RexMotion:
             print(f"[mock] ch{ch} → {ang:3d}°")
 
     def center_servos(self):
-        for ch in self.HIP_CH:
-            self.write(ch, 90)
-        for ch in self.LIFT_CH:
-            self.write(ch, self.cfg["stance_height"])
+        # Mutlak açı gönderimiyle
+        self.raw_servo_cmd("0:90 2:90 4:90 6:90 1:{} 3:{} 5:{} 7:{}".format(
+            self.cfg["stance_height"],
+            self.cfg["stance_height"],
+            self.cfg["stance_height"],
+            self.cfg["stance_height"],
+        ))
 
-    def stabilize(self):  self._srv(90,90,90,90)
+    def stabilize(self):
+        self.raw_servo_cmd("0:90 2:90 4:90 6:90")
 
-    def lean_left(self):    self._srv(90,90,90,90,  60,60,120,120)
-    def lean_right(self):   self._srv(90,90,90,90, 120,120, 60, 60)
-    def lean_forward(self): self._srv(90,90,90,90,  60,120,120, 60)
-    def lean_back(self):    self._srv(90,90,90,90, 120, 60, 60,120)
+    def lean_left(self):
+        self.raw_servo_cmd("0:90 2:90 4:90 6:90 1:60 3:60 5:120 7:120")
 
-    def _step_block(self, hips, lifts, spd):
-        lifts = [l + self.cfg["high"] * 3 for l in lifts]
-        done  = False
-        while not done:
-            done = True
-            for i, ch in enumerate(self.HIP_CH):
-                cur, tgt = self.s[ch], hips[i]
-                if cur != tgt:
-                    self.write(ch, cur + (spd[i] if cur < tgt else -spd[i]))
-                    done = False
-            for i, ch in enumerate(self.LIFT_CH):
-                cur, tgt = self.s[ch], lifts[i]
-                if cur != tgt:
-                    self.write(ch, cur + (spd[i] if cur < tgt else -spd[i]))
-                    done = False
-            if not done:
-                time.sleep(self.cfg["spd"] / 1000)
+    def lean_right(self):
+        self.raw_servo_cmd("0:90 2:90 4:90 6:90 1:120 3:120 5:60 7:60")
 
-    def _srv(self, p11,p21,p31,p41, p12=None,p22=None,p32=None,p42=None,
-             sp1=3,sp2=3,sp3=3,sp4=3):
-        p12 = p12 if p12 is not None else self.cfg["stance_height"]
-        p22 = p22 if p22 is not None else self.cfg["stance_height"]
-        p32 = p32 if p32 is not None else self.cfg["stance_height"]
-        p42 = p42 if p42 is not None else self.cfg["stance_height"]
-        self._step_block([p11,p21,p31,p41], [p12,p22,p32,p42], (sp1,sp2,sp3,sp4))
+    def lean_forward(self):
+        self.raw_servo_cmd("0:90 2:90 4:90 6:90 1:60 3:120 5:120 7:60")
 
-    def HIP_FWD(self, ch):
-        base = self.FWD_DIR[ch]
-        return (30 if base == 0 else 150) if self.cfg["big_step"] else (60 if base == 0 else 120)
-
-    def HIP_BCK(self, ch):
-        base = self.BCK_DIR[ch]
-        return (30 if base == 0 else 150) if self.cfg["big_step"] else (60 if base == 0 else 120)
+    def lean_back(self):
+        self.raw_servo_cmd("0:90 2:90 4:90 6:90 1:120 3:60 5:60 7:120")
 
     def _busy(self):
         if self.walking:
@@ -171,39 +148,57 @@ class RexMotion:
         return False
 
     def forward(self):
-        if self._busy(): return
+        if self._busy():
+            return
         try:
+            # Her hareket preset mutlak açı ile başlar
             self.center_servos()
             time.sleep(0.25)
-            self._srv(self.HIP_BCK(0),  90,  90, self.HIP_FWD(6), 42,42,42,  6, 2,3,2,2)
-            self._srv(self.HIP_BCK(0),  90,  90, self.HIP_FWD(6), 33,33,33, 42, 2,3,2,2)
-            self._srv(self.HIP_BCK(0), self.HIP_BCK(2), self.HIP_FWD(4), self.HIP_FWD(6), 42,42, 6,42, 2,2,3,2)
-            self._srv(self.HIP_BCK(0), self.HIP_BCK(2), self.HIP_FWD(4), self.HIP_FWD(6), 33,24,33,33, 2,2,3,2)
-            self._srv(self.HIP_FWD(0), self.HIP_BCK(2), self.HIP_FWD(4), self.HIP_BCK(6), 6,42,42,42, 2,2,2,3)
-            self._srv(self.HIP_FWD(0), self.HIP_BCK(2), self.HIP_FWD(4), self.HIP_BCK(6), 42, 6,33, 6, 2,2,2,3)
-            self._srv(self.HIP_FWD(0), self.HIP_FWD(2), self.HIP_BCK(4), self.HIP_BCK(6), 42, 6,33,33, 3,2,2,2)
-            self._srv(90,90,90,90, 33,33,33,33, 3,2,2,2)
+            # Hareket adımları (örnek, ilerleyerek açılar)
+            self.raw_servo_cmd("0:30 2:90 4:90 6:150 1:42 3:42 5:42 7:6")
+            time.sleep(0.3)
+            self.raw_servo_cmd("0:30 2:90 4:90 6:150 1:33 3:33 5:33 7:42")
+            time.sleep(0.3)
+            self.raw_servo_cmd("0:30 2:30 4:150 6:150 1:42 3:42 5:6 7:42")
+            time.sleep(0.3)
+            self.raw_servo_cmd("0:30 2:30 4:150 6:150 1:33 3:24 5:33 7:33")
+            time.sleep(0.3)
+            self.raw_servo_cmd("0:150 2:30 4:150 6:30 1:6 3:42 5:42 7:42")
+            time.sleep(0.3)
+            self.raw_servo_cmd("0:150 2:30 4:150 6:30 1:42 3:6 5:33 7:6")
+            time.sleep(0.3)
+            self.raw_servo_cmd("0:150 2:150 4:30 6:30 1:42 3:6 5:33 7:33")
+            time.sleep(0.3)
+            self.center_servos()
         except Exception as e:
             print("[GAIT-ERR]", e)
         finally:
             self.walking = False
 
     def back(self):
-        if self._busy(): return
+        if self._busy():
+            return
         try:
             self.center_servos()
             time.sleep(0.25)
-            self._srv(self.HIP_FWD(0), self.HIP_FWD(2), self.HIP_BCK(4), self.HIP_BCK(6), 42, 6,42,42, 2,3,2,2)
-            self._srv(90,90,90,90, 33,33,33,33, 3,2,2,2)
+            self.raw_servo_cmd("0:150 2:150 4:30 6:30 1:42 3:6 5:42 7:42")
+            time.sleep(0.3)
+            self.center_servos()
         except Exception as e:
             print("[GAIT-ERR]", e)
         finally:
             self.walking = False
 
-    def turn_left(self): pass
-    def turn_right(self): pass
+    def turn_left(self):
+        # İstersen benzer mutlak servo komutları tanımlayabilirim
+        pass
+
+    def turn_right(self):
+        # İstersen benzer mutlak servo komutları tanımlayabilirim
+        pass
 
     def raw_servo_cmd(self, cmd: str):
+        # Slider hareketi gibi mutlak servo açı komutlarını işler
         for tok in cmd.strip().split():
             if ':' in tok:
                 ch, ang = tok.split(':')
