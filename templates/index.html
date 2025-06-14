@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>REX Robot Controller</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <header>REX Spider Robot Web Controller</header>
+  <div class="container">
+    <div class="controls">
+      <button onclick="sendCommand('/forward')">Forward</button>
+      <button onclick="sendCommand('/back')">Backward</button>
+      <button onclick="sendCommand('/left')">Left</button>
+      <button onclick="sendCommand('/right')">Right</button>
+      <button onclick="sendCommand('/center')">Center</button>
+      <button onclick="sendCommand('/dance')">Dance</button>
+      <button onclick="sendCommand('/lean_left')">Lean Left</button>
+      <button onclick="sendCommand('/lean_right')">Lean Right</button>
+      <button onclick="sendCommand('/start_camera')">Start Camera</button>
+      <button onclick="sendCommand('/stop_camera')">Stop Camera</button>
+      <button onclick="toggleTracking()">Toggle Tracking</button>
+    </div>
+    <div class="video">
+      <img src="{{ url_for('video_feed') }}" alt="Video Stream">
+    </div>
+  </div>
+  <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+</body>
+</html>

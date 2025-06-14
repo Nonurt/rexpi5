@@ -1,8 +1,0 @@
-flask
-opencv-python
-imutils
-requests
-numpy
-adafruit-circuitpython-pca9685
-adafruit-blinka
-picamera2
