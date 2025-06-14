@@ -648,3 +648,5 @@ class HumanTrackingServoController:
             new_angle = current_angle + (step_size * (i + 1))
             self.set_servo_angle(servo_name, new_angle)
             time.sleep(settings['speed_delay'])
+
+            controller = HumanTrackingServoController()
