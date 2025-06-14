@@ -2,7 +2,7 @@
 #  web.py – Flask server for REX Pi 5
 # ======================================
 """
-• Klasik gait rotaları (/forward, /back, /left, /right, /center)
+• Gait kuyruk sistemi ile /forward, /back, /left, /right, /center komutları
 • /servo?cmd="0:120 6:30"   → ham servo yaz
 • /cfg  (GET/POST)          → JSON konfigürasyon
 • /trim?d=±1                → tüm kalça trim’ini adım adım ayarla
@@ -13,6 +13,7 @@
 
 from pathlib import Path
 from flask import Flask, send_from_directory, Response, request, jsonify
+import threading
 
 import movement               # servo & gait mantığı
 import video                  # kamera + takip (security’e delege)
@@ -52,7 +53,6 @@ def cfg():
 # ──────────── Quick-trim helper ─────────
 @app.get("/trim")
 def trim():
-    """/trim?d=1 → tüm hip trim +1; d=-1 → -1"""
     try:
         delta = int(request.args.get("d", "0"))
     except ValueError:
@@ -69,22 +69,40 @@ def servo():
         movement.raw_servo_cmd(cmd)
     return "OK"
 
-# ──────────── Gait routes ────────────
+# ──────────── Gait queue-safe routes ────────────
+gait_lock = threading.Lock()
+
+def enqueue_gait(fn):
+    def wrapped():
+        with gait_lock:
+            fn()
+        return "OK"
+    return wrapped
+
 @app.get("/forward")
+@enqueue_gait
+def gait_forward():
+    return movement.rex.forward()
+
 @app.get("/back")
+@enqueue_gait
+def gait_back():
+    return movement.rex.back()
+
 @app.get("/left")
+@enqueue_gait
+def gait_left():
+    return movement.rex.turn_left()
+
 @app.get("/right")
+@enqueue_gait
+def gait_right():
+    return movement.rex.turn_right()
+
 @app.get("/center")
-def gait():
-    actions = {
-        "/forward": movement.rex.forward,
-        "/back"   : movement.rex.back,
-        "/left"   : movement.rex.turn_left,
-        "/right"  : movement.rex.turn_right,
-        "/center" : movement.rex.center_servos,
-    }
-    actions[request.path]()
-    return "OK"
+@enqueue_gait
+def gait_center():
+    return movement.rex.center_servos()
 
 # ──────────── Lean helper ───────────
 @app.get("/lean")
@@ -120,7 +138,7 @@ def tog_facesave():
     security.SAVE_FACE_IMAGES = bool(int(request.args.get("v", "0")))
     return "ON" if security.SAVE_FACE_IMAGES else "OFF"
 
-@app.get("/detmode")          # m = person | face | both
+@app.get("/detmode")
 def detector_mode():
     m = request.args.get("m", "both")
     if m not in {"person", "face", "both"}:
