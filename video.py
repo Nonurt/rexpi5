@@ -1,4 +1,3 @@
-
 # video.py – Kamera, algılama ve servo takibi (Picamera2 sürümü)
 # ──────────────────────────────────────────────────────────────
 # • Yüz (SSD-ResNet) + İnsan (YOLOv4-tiny) algılama
@@ -12,11 +11,6 @@ from pathlib import Path
 from picamera2 import Picamera2
 from picamera2.previews import NullPreview
 
-picam2 = Picamera2()
-picam2.configure(picam2.create_preview_configuration(main={"size": (W, H)}))
-picam2.start_preview(NullPreview())  # <=== preview hatasını çözer
-picam2.start()
-
 import models_cfg as cfg
 import movement, security
 
@@ -24,10 +18,13 @@ import movement, security
 W, H = 320, 240
 picam2 = Picamera2()
 picam2.configure(picam2.create_preview_configuration(main={"size": (W, H)}))
+picam2.start_preview(NullPreview())  # Preview hatasını çözer
 picam2.start()
 time.sleep(1)  # Kamera hazır olması için kısa bekleme
 
 print(f"[VIDEO] Picamera2 başlatıldı: {W}×{H}")
+
+# ... devam eden kodlar ...
 
 # DNN modelleri yükleme
 face_net = cv2.dnn.readNetFromCaffe(str(cfg.FACE_PROTO), str(cfg.FACE_MODEL))
