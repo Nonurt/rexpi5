@@ -1,20 +1,22 @@
-# ============================
-#  web.py
-# ============================
-"""Flask server for REX quadruped + camera UI
-    ▸ Classic gait routes (forward/back/left/right/center)
-    ▸ Raw servo gateway  /servo?cmd="0:120 6:30"
-    ▸ /cfg  GET / POST (JSON) – stance_height, big_step, trim etc.
-    ▸ Camera processing toggles (track, gamma, hist, autostep)
-    ▸ Face‑save & detector‑mode switches
-    ▸ NEW: /trim?d=±1  – hip trim quick‑adjust, safe‑clamped
+# ======================================
+#  web.py – Flask server for REX Pi 5
+# ======================================
 """
+• Klasik gait rotaları (/forward, /back, /left, /right, /center)
+• /servo?cmd="0:120 6:30"   → ham servo yaz
+• /cfg  (GET/POST)          → JSON konfigürasyon
+• /trim?d=±1                → tüm kalça trim’ini adım adım ayarla
+• Kamera işleme toggles     → /track /gamma /hist /autostep
+• Yüz kaydetme & dedektör modu                → /facesave /detmode
+• MJPEG akışı               → /stream.mjpg
+"""
+
 from pathlib import Path
 from flask import Flask, send_from_directory, Response, request, jsonify
 
-import movement               # REX gait & servo logic
-import video                  # camera + tracking (delegates IDs to security)
-import security               # photo save flag
+import movement               # servo & gait mantığı
+import video                  # kamera + takip (security’e delege)
+import security               # yüz fotoğrafı kaydetme bayrağı
 
 APP_ROOT   = Path(__file__).parent
 STATIC_DIR = APP_ROOT / "static"
@@ -37,7 +39,6 @@ def stream():
                    b"Content-Type: image/jpeg\r\n\r\n" +
                    buf +
                    b"\r\n")
-
     return Response(gen(), mimetype="multipart/x-mixed-replace; boundary=frame")
 
 # ───────────────────────── Config (/cfg) ────────────────────
@@ -48,7 +49,7 @@ def cfg():
         movement.rex.save_cfg()
     return jsonify(movement.rex.cfg)
 
-# ───────────────────────── Quick‑trim helper ────────────────
+# ───────────────────────── Quick-trim helper ────────────────
 @app.get("/trim")
 def trim():
     """/trim?d=1 → tüm hip trim +1; d=-1 → -1"""
@@ -113,14 +114,13 @@ def tog_hist():
     video.AUTO_HIST = bool(int(request.args.get("v", "0")))
     return "ON" if video.AUTO_HIST else "OFF"
 
-# ───────────────────────── Face‑save toggle ────────────────
+# ───────────────────────── Face-save & mode ─────────────────
 @app.get("/facesave")
 def tog_facesave():
     security.SAVE_FACE_IMAGES = bool(int(request.args.get("v", "0")))
     return "ON" if security.SAVE_FACE_IMAGES else "OFF"
 
-# ───────────────────────── Detector‑mode toggle ─────────────
-@app.get("/detmode")  # m = person | face | both
+@app.get("/detmode")          # m = person | face | both
 def detector_mode():
     m = request.args.get("m", "both")
     if m not in {"person", "face", "both"}:
@@ -152,75 +152,6 @@ def status():
         "stance"       : movement.rex.cfg.get("stance_height", 60)
     })
 
-# ───────────────────────── Run ───────────────────────────────
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080)
-
-# ============================
-"""Minimal Flask interface for REX quadruped.
-    • /forward, /back, /left, /right  – gait calls
-    • /center                        – brings all servos to 90 ° (with trim)
-    • /servo?cmd="0:45 6:120"        – raw absolute servo command for quick tests
-    • /cfg  (GET / POST)             – read / write JSON config (trim, stance, etc.)
-"""
-from pathlib import Path
-from flask import Flask, jsonify, request, send_from_directory, Response
-
-import movement                           # ⇢ RexMotion singleton lives there
-
-app        = Flask(__name__)
-APP_ROOT   = Path(__file__).parent
-STATIC_DIR = APP_ROOT / "static"
-
-# ───────────────────────── UI root ──────────────────────────
-@app.get("/")
-def root():
-    idx = STATIC_DIR / "index.html"
-    return send_from_directory(idx.parent, idx.name) if idx.exists() else "REX Quad server"
-
-# ───────────────────────── Stance cfg ───────────────────────
-@app.route("/cfg", methods=["GET", "POST"])
-def cfg():
-    if request.method == "POST":
-        payload = request.get_json(force=True) or {}
-        movement.rex.cfg.update(payload)
-        movement.rex.save_cfg()
-    return jsonify(movement.rex.cfg)
-
-# ───────────────────────── Raw servo ────────────────────────
-@app.get("/servo")
-def servo():
-    cmd = request.args.get("cmd", "")
-    if cmd:
-        movement.raw_servo_cmd(cmd)
-    return "OK"
-
-# ───────────────────────── Gait routes ──────────────────────
-@app.get("/forward")
-@app.get("/back")
-@app.get("/left")
-@app.get("/right")
-@app.get("/center")
-def gait():
-    actions = {
-        "/forward": movement.rex.forward,
-        "/back"   : movement.rex.back,
-        "/left"   : movement.rex.turn_left,
-        "/right"  : movement.rex.turn_right,
-        "/center" : movement.rex.center_servos,
-    }
-    actions[request.path]()
-    return "OK"
-
-# ───────────────────────── Trim helpers ─────────────────────
-@app.get("/trim")
-def trim():
-    d = int(request.args.get("d", "0"))  # -1 or +1
-    if d:
-        movement.rex.adjust_trim(d)
-    return jsonify({"trim": movement.rex.cfg["trim"]})
-
-
-# ───────────────────────── Run ───────────────────────────────
+# ───────────────────────── Run ──────────────────────────────
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
