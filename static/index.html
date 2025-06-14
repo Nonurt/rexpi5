@@ -1,0 +1,73 @@
+<!doctype html><html lang="en"><head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>REX-Pi5 Control</title>
+  <link rel="stylesheet" href="/static/css/styles.css">
+  <script src="/static/js/app.js" defer></script>
+</head><body>
+
+<div class="main">
+  <!-- LEFT: camera + path -->
+  <div class="cam-box">
+    <img id="cam" src="/stream.mjpg" width="320" height="320" alt="cam">
+    <div class="cam-btns">
+      <button id="trackBtn"    class="tgl">Track OFF</button>
+      <button id="autostepBtn" class="tgl">AutoStep OFF</button>
+      <button id="gammaBtn"    class="tgl">Gamma OFF</button>
+      <button id="histBtn"     class="tgl">HistEq OFF</button>
+      <button id="facesaveBtn" class="tgl">FaceSave OFF</button>
+    </div>
+
+    <div class="det-box">
+      <label for="detSel">Detector:</label>
+      <select id="detSel">
+        <option value="both" selected>Person+Face</option>
+        <option value="person">Person only</option>
+        <option value="face">Face only</option>
+      </select>
+    </div>
+
+    <div class="tgt-box">
+      <label for="targetSel">Target ID</label>
+      <select id="targetSel"></select>
+      <button id="refreshTgt">↻</button>
+    </div>
+
+    <h3>Path Visualization</h3>
+    <img src="/static/path_draw.png" width="320" height="320" alt="Path">
+  </div>
+
+  <!-- RIGHT: controls -->
+  <div class="ctrl">
+    <h1>REX-Pi5</h1>
+
+    <h2>Direction</h2>
+    <div class="row"><button data-cmd="forward">▲ Forward</button></div>
+    <div class="row">
+      <button data-cmd="left">◀ Left</button>
+      <button data-cmd="center">Center</button>
+      <button data-cmd="right">Right ▶</button>
+    </div>
+    <div class="row"><button data-cmd="back">▼ Back</button></div>
+
+    <h2>Lean</h2>
+    <div class="row">
+      <button data-cmd="lean?dir=left">Lean L</button>
+      <button data-cmd="lean?dir=right">Lean R</button>
+      <button data-cmd="lean?dir=fwd">Lean Fwd</button>
+      <button data-cmd="lean?dir=back">Lean Back</button>
+    </div>
+
+    <h2>Stance (<span id="stv">60</span>°)</h2>
+    <input id="st" type="range" min="30" max="70" value="60">
+    <div class="row"><button data-cmd="center">Stabilize</button></div>
+
+    <h2>Manual Servo</h2>
+    <input id="raw" style="width:260px" placeholder="0:60 3:120 7:45">
+    <button id="sendRaw">Send</button>
+
+    <h2>Sliders</h2>
+    <div id="sliders" class="row slider-box"></div>
+  </div>
+</div>
+
+</body></html>
