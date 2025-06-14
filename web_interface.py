@@ -6,7 +6,7 @@ import numpy as np
 
 app = Flask(__name__)
 
-# Initialize these in main.py and attach to app.config
+# These will be initialized by main.py
 controller = None
 ai_model = None
 camera_tracker = None
@@ -24,7 +24,6 @@ def generate_frames():
                            b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
             except Exception as e:
                 print(f"[ERROR] Frame encoding error: {e}")
-
         time.sleep(0.033)  # ~30 FPS
 
 
@@ -51,23 +50,20 @@ def start_camera():
 def toggle_tracking():
     controller.tracking_enabled = not controller.tracking_enabled
     status = "enabled" if controller.tracking_enabled else "disabled"
-    return jsonify(
-        {'status': 'success', 'message': f'Human tracking {status}', 'tracking': controller.tracking_enabled})
+    return jsonify({'status': 'success', 'message': f'Human tracking {status}', 'tracking': controller.tracking_enabled})
 
 
 @app.route('/api/toggle_camera_tracking', methods=['POST'])
 def toggle_camera_tracking():
     controller.camera_tracking = not controller.camera_tracking
     status = "enabled" if controller.camera_tracking else "disabled"
-    return jsonify(
-        {'status': 'success', 'message': f'Camera tracking {status}', 'camera_tracking': controller.camera_tracking})
+    return jsonify({'status': 'success', 'message': f'Camera tracking {status}', 'camera_tracking': controller.camera_tracking})
 
 
 @app.route('/api/set_power_mode', methods=['POST'])
 def set_power_mode():
     data = request.get_json()
     mode = data.get('mode', 'medium')
-
     if controller.set_power_mode(mode):
         settings = controller.get_power_settings()
         return jsonify({
@@ -88,27 +84,23 @@ def manual_move():
     if controller.walking:
         return jsonify({'status': 'error', 'message': 'Robot is currently walking'})
 
+    action_map = {
+        'forward': controller.spider_walk_forward,
+        'left': controller.spider_turn_left,
+        'right': controller.spider_turn_right,
+        'back': controller.spider_back_away,
+        'stance': controller.spider_stance_position,
+        'defensive': controller.spider_defensive_posture,
+        'attack': controller.spider_attack_posture,
+        'crouch': controller.spider_crouch_low,
+    }
+
     try:
-        if action == 'forward':
-            threading.Thread(target=controller.spider_walk_forward, daemon=True).start()
-        elif action == 'left':
-            threading.Thread(target=controller.spider_turn_left, daemon=True).start()
-        elif action == 'right':
-            threading.Thread(target=controller.spider_turn_right, daemon=True).start()
-        elif action == 'back':
-            threading.Thread(target=controller.spider_back_away, daemon=True).start()
-        elif action == 'stance':
-            threading.Thread(target=controller.spider_stance_position, daemon=True).start()
-        elif action == 'defensive':
-            threading.Thread(target=controller.spider_defensive_posture, daemon=True).start()
-        elif action == 'attack':
-            threading.Thread(target=controller.spider_attack_posture, daemon=True).start()
-        elif action == 'crouch':
-            threading.Thread(target=controller.spider_crouch_low, daemon=True).start()
+        if action in action_map:
+            threading.Thread(target=action_map[action], daemon=True).start()
+            return jsonify({'status': 'success', 'message': f'Executing {action} movement'})
         else:
             return jsonify({'status': 'error', 'message': 'Invalid action'})
-
-        return jsonify({'status': 'success', 'message': f'Executing {action} movement'})
     except Exception as e:
         return jsonify({'status': 'error', 'message': f'Movement error: {str(e)}'})
 
@@ -117,7 +109,6 @@ def manual_move():
 def camera_control():
     data = request.get_json()
     action = data.get('action')
-
     try:
         if action == 'center':
             controller.set_camera_position(pan_angle=90, tilt_angle=90)
@@ -149,15 +140,12 @@ def camera_control():
 @app.route('/api/roi_settings', methods=['POST'])
 def update_roi_settings():
     data = request.get_json()
-
     if 'stop_distance' in data:
-        controller.roi_stop_distance = max(30, min(200, int(data['stop_distance']))
-
-        if 'min_distance' in data:
-            controller.roi_min_distance = max(20, min(100, int(data['min_distance']))
-
-        if 'enabled' in data:
-            controller.roi_enabled = bool(data['enabled'])
+        controller.roi_stop_distance = max(30, min(200, int(data['stop_distance'])))
+    if 'min_distance' in data:
+        controller.roi_min_distance = max(20, min(100, int(data['min_distance'])))
+    if 'enabled' in data:
+        controller.roi_enabled = bool(data['enabled'])
 
     return jsonify({
         'status': 'success',
@@ -172,34 +160,31 @@ def update_roi_settings():
 
 @app.route('/api/leg_control', methods=['POST'])
 def leg_control():
-    """Specific leg movement control"""
     data = request.get_json()
     action = data.get('action')
-    leg_group = data.get('leg_group', 'all')  # front, rear, left, right, all
+    leg_group = data.get('leg_group', 'all')
 
     if controller.walking:
         return jsonify({'status': 'error', 'message': 'Robot is currently walking'})
 
     try:
-        if action == 'lift':
-            threading.Thread(target=controller.lift_legs, args=(leg_group,), daemon=True).start()
-        elif action == 'lower':
-            threading.Thread(target=controller.lower_legs, args=(leg_group,), daemon=True).start()
-        elif action == 'spread':
-            threading.Thread(target=controller.spread_legs, args=(leg_group,), daemon=True).start()
-        elif action == 'center':
-            threading.Thread(target=controller.center_legs, args=(leg_group,), daemon=True).start()
+        action_map = {
+            'lift': controller.lift_legs,
+            'lower': controller.lower_legs,
+            'spread': controller.spread_legs,
+            'center': controller.center_legs
+        }
+        if action in action_map:
+            threading.Thread(target=action_map[action], args=(leg_group,), daemon=True).start()
+            return jsonify({'status': 'success', 'message': f'{action} {leg_group} legs'})
         else:
             return jsonify({'status': 'error', 'message': 'Invalid leg action'})
-
-        return jsonify({'status': 'success', 'message': f'{action} {leg_group} legs'})
     except Exception as e:
         return jsonify({'status': 'error', 'message': f'Leg control error: {str(e)}'})
 
 
 @app.route('/api/gait_control', methods=['POST'])
 def gait_control():
-    """Advanced gait pattern control"""
     data = request.get_json()
     gait_type = data.get('gait_type')
     direction = data.get('direction', 'forward')
@@ -208,31 +193,27 @@ def gait_control():
         return jsonify({'status': 'error', 'message': 'Robot is currently walking'})
 
     try:
-        if gait_type == 'front_lift_walk':
-            threading.Thread(target=controller.front_lift_gait, args=(direction,), daemon=True).start()
-        elif gait_type == 'rear_drive_walk':
-            threading.Thread(target=controller.rear_drive_gait, args=(direction,), daemon=True).start()
-        elif gait_type == 'alternating_pairs':
-            threading.Thread(target=controller.alternating_pairs_gait, args=(direction,), daemon=True).start()
+        gait_map = {
+            'front_lift_walk': controller.front_lift_gait,
+            'rear_drive_walk': controller.rear_drive_gait,
+            'alternating_pairs': controller.alternating_pairs_gait
+        }
+        if gait_type in gait_map:
+            threading.Thread(target=gait_map[gait_type], args=(direction,), daemon=True).start()
+            return jsonify({'status': 'success', 'message': f'Executing {gait_type} gait {direction}'})
         else:
             return jsonify({'status': 'error', 'message': 'Invalid gait type'})
-
-        return jsonify({'status': 'success', 'message': f'Executing {gait_type} gait {direction}'})
     except Exception as e:
         return jsonify({'status': 'error', 'message': f'Gait control error: {str(e)}'})
 
 
 @app.route('/api/camera_settings', methods=['POST'])
 def update_camera_settings():
-    """Update camera control settings"""
     data = request.get_json()
-
     if 'smooth_delay' in data:
         controller.camera_smooth_delay = max(0.01, min(0.2, float(data['smooth_delay'])))
-
     if 'dead_zone_radius' in data:
         controller.dead_zone_radius = max(20, min(150, int(data['dead_zone_radius'])))
-
     if 'step_size' in data:
         controller.camera_step_size = max(1, min(10, int(data['step_size'])))
 
@@ -272,14 +253,10 @@ def get_status():
 
 @app.route('/api/stop_all', methods=['POST'])
 def stop_all():
-    """Emergency stop all functions"""
     controller.tracking_enabled = False
     controller.camera_tracking = False
     controller.walking = False
-
-    # Return to stance position
     threading.Thread(target=controller.spider_stance_position, daemon=True).start()
-
     return jsonify({'status': 'success', 'message': 'All functions stopped - Emergency stop activated'})
 
 
@@ -306,7 +283,6 @@ def advanced_move():
             threading.Thread(target=controller.spider_walk_algorithm_v2, args=(direction, steps), daemon=True).start()
         else:
             return jsonify({'status': 'error', 'message': 'Invalid advanced action'})
-
         return jsonify({'status': 'success', 'message': f'Executing {action}'})
     except Exception as e:
         return jsonify({'status': 'error', 'message': f'Advanced movement error: {str(e)}'})
@@ -314,7 +290,6 @@ def advanced_move():
 
 @app.route('/api/rex_movement', methods=['POST'])
 def rex_movement():
-    """REX Quad style movement control"""
     data = request.get_json()
     action = data.get('action')
 
@@ -322,39 +297,31 @@ def rex_movement():
         return jsonify({'status': 'error', 'message': 'Robot is currently walking'})
 
     try:
-        if action == 'rex_forward':
-            threading.Thread(target=controller.rex_forward_gait, daemon=True).start()
-        elif action == 'rex_backward':
-            threading.Thread(target=controller.rex_backward_gait, daemon=True).start()
-        elif action == 'rex_left':
-            threading.Thread(target=controller.rex_turn_left, daemon=True).start()
-        elif action == 'rex_right':
-            threading.Thread(target=controller.rex_turn_right, daemon=True).start()
-        elif action == 'rex_stabilize':
-            threading.Thread(target=controller.rex_stabilize, daemon=True).start()
-        elif action == 'rex_lean_left':
-            threading.Thread(target=controller.rex_lean_left, daemon=True).start()
-        elif action == 'rex_lean_right':
-            threading.Thread(target=controller.rex_lean_right, daemon=True).start()
-        elif action == 'rex_lean_forward':
-            threading.Thread(target=controller.rex_lean_forward, daemon=True).start()
-        elif action == 'rex_lean_back':
-            threading.Thread(target=controller.rex_lean_back, daemon=True).start()
+        action_map = {
+            'rex_forward': controller.rex_forward_gait,
+            'rex_backward': controller.rex_backward_gait,
+            'rex_left': controller.rex_turn_left,
+            'rex_right': controller.rex_turn_right,
+            'rex_stabilize': controller.rex_stabilize,
+            'rex_lean_left': controller.rex_lean_left,
+            'rex_lean_right': controller.rex_lean_right,
+            'rex_lean_forward': controller.rex_lean_forward,
+            'rex_lean_back': controller.rex_lean_back
+        }
+        if action in action_map:
+            threading.Thread(target=action_map[action], daemon=True).start()
+            return jsonify({'status': 'success', 'message': f'Executing REX {action}'})
         else:
             return jsonify({'status': 'error', 'message': 'Invalid REX action'})
-
-        return jsonify({'status': 'success', 'message': f'Executing REX {action}'})
     except Exception as e:
         return jsonify({'status': 'error', 'message': f'REX movement error: {str(e)}'})
 
 
 @app.route('/api/rex_stance_control', methods=['POST'])
 def rex_stance_control():
-    """REX stance height control"""
     data = request.get_json()
-    height = data.get('height', 60)  # Default stance height
+    height = data.get('height', 60)
 
-    # Update controller's stance height for REX functions
     if hasattr(controller, 'rex_stance_height'):
         controller.rex_stance_height = max(30, min(70, int(height)))
     else:
@@ -367,8 +334,10 @@ def rex_stance_control():
     })
 
 
-def init_web_interface(ctrl):
+def init_web_interface(ctrl, model=None, tracker=None):
     """Initialize the web interface with controller reference"""
-    global controller
+    global controller, ai_model, camera_tracker
     controller = ctrl
+    ai_model = model
+    camera_tracker = tracker
     app.config['controller'] = controller
