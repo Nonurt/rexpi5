@@ -1,7 +1,10 @@
+# camera_ai_handler.py (GÜNCELLENMİŞ HALİ)
+
 import cv2
 import time
 import numpy as np
 import threading
+# DEĞİŞTİ: Yeni ayarları config'den alabilmek için importları güncelledik.
 from config import VIDEO, AI_MODEL, CAMERA_SETTINGS, ROI_SETTINGS, CAMERA_TRACKING_SETTINGS, LED_SETTINGS
 
 
@@ -80,20 +83,17 @@ class CameraAIHandler:
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         mean_brightness = np.mean(gray)
 
-        # LED_SETTINGS'den parlaklık eşiğini al
         if mean_brightness < LED_SETTINGS['brightness_threshold']:
-            # Otomatik modda LED parlaklığını ayarla (bu değer de config'den gelebilir)
-            # Bu fonksiyon RobotController'da olduğu için self üzerinden erişiyoruz.
             if hasattr(self, 'set_led_brightness'):
-                self.toggle_led(state=True)  # LED'in açık olduğundan emin ol
-                self.set_led_brightness(LED_SETTINGS['manual_brightness'])  # Ayarlanabilir parlaklık
+                self.toggle_led(state=True)
+                self.set_led_brightness(LED_SETTINGS['manual_brightness'])
 
-            gamma = 1.5
+            # DEĞİŞTİ: Gamma değeri artık config dosyasından geliyor.
+            gamma = CAMERA_SETTINGS['gamma_value']
             inv_gamma = 1.0 / gamma
             table = np.array([((i / 255.0) ** inv_gamma) * 255 for i in np.arange(0, 256)]).astype("uint8")
             return cv2.LUT(frame, table)
         else:
-            # Ortam aydınlıksa LED'i kapat
             if hasattr(self, 'toggle_led'):
                 self.toggle_led(state=False)
 
@@ -186,7 +186,9 @@ class CameraAIHandler:
             self.human_detected = False
             if self.camera_tracking:
                 current_time = time.time()
-                if current_time - getattr(self, 'last_detection_time', 0) > 1.5:
+                # DEĞİŞTİ: Arama bekleme süresi artık config'den geliyor.
+                search_delay = CAMERA_TRACKING_SETTINGS['search_delay']
+                if current_time - getattr(self, 'last_detection_time', 0) > search_delay:
                     if not getattr(self, 'is_searching', False):
                         self.is_searching = True
                         threading.Thread(target=self.camera_sweep_search, daemon=True).start()
@@ -247,15 +249,19 @@ class CameraAIHandler:
             if dt == 0: return
 
             center_x, center_y = human_center
+            integral_limit = CAMERA_TRACKING_SETTINGS['pid_integral_limit']
 
             # --- Pan (Yatay) Eksen PID Hesabı ---
             error_pan = self.frame_center_x - center_x
 
             if abs(error_pan) > CAMERA_TRACKING_SETTINGS['dead_zone_radius']:
                 self.pan_integral += error_pan * dt
+                # YENİ: PID İntegral Anti-Windup. İntegral terimini sınırlar.
+                self.pan_integral = max(-integral_limit, min(integral_limit, self.pan_integral))
+
                 derivative_pan = (error_pan - self.pan_last_error) / dt
                 output_pan = (self.pan_kp * error_pan) + (self.pan_ki * self.pan_integral) + (
-                            self.pan_kd * derivative_pan)
+                        self.pan_kd * derivative_pan)
                 new_pan_angle = self.camera_pan_angle + output_pan
             else:
                 self.pan_integral = 0
@@ -268,18 +274,19 @@ class CameraAIHandler:
 
             if abs(error_tilt) > CAMERA_TRACKING_SETTINGS['dead_zone_radius']:
                 self.tilt_integral += error_tilt * dt
+                # YENİ: PID İntegral Anti-Windup. İntegral terimini sınırlar.
+                self.tilt_integral = max(-integral_limit, min(integral_limit, self.tilt_integral))
+
                 derivative_tilt = (error_tilt - self.tilt_last_error) / dt
                 output_tilt = (self.tilt_kp * error_tilt) + (self.tilt_ki * self.tilt_integral) + (
-                            self.tilt_kd * derivative_tilt)
+                        self.tilt_kd * derivative_tilt)
                 new_tilt_angle = self.camera_tilt_angle - output_tilt
             else:
                 self.tilt_integral = 0
                 new_tilt_angle = self.camera_tilt_angle
 
             self.tilt_last_error = error_tilt
-
             self.last_pid_time = current_time
-
             self.set_camera_position(new_pan_angle, new_tilt_angle, smooth=True)
 
     def set_camera_position(self, pan_angle=None, tilt_angle=None, smooth=False):
@@ -305,13 +312,16 @@ class CameraAIHandler:
             return
 
         print("[CAMERA] Human lost. Starting sweep search...")
-        positions = [90, 60, 120, 45, 135, 90]
+        # DEĞİŞTİ: Arama pozisyonları ve bekleme süresi artık config'den geliyor.
+        positions = CAMERA_TRACKING_SETTINGS['sweep_positions']
+        sleep_time = CAMERA_TRACKING_SETTINGS['sweep_sleep_time']
+
         for pan_pos in positions:
             if self.human_detected:
                 print("[CAMERA] Human re-acquired during sweep. Stopping search.")
                 break
             self.set_camera_position(pan_angle=pan_pos, smooth=True)
-            time.sleep(0.6)
+            time.sleep(sleep_time)
 
         if not self.human_detected:
             print("[CAMERA] Sweep search finished. Human not found. Centering camera.")
