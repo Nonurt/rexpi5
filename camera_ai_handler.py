@@ -32,9 +32,6 @@ class CameraAIHandler:
             self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, VIDEO['height'])
             self.is_camera_running = True
 
-            # Initialize camera tracking variables
-            self.init_camera_ai_variables()
-
             camera_thread = threading.Thread(target=self.camera_loop, daemon=True)
             camera_thread.start()
 
@@ -43,31 +40,6 @@ class CameraAIHandler:
         except Exception as e:
             print(f"[ERROR] Camera could not be started: {e}")
             return False
-
-    def init_camera_ai_variables(self):
-        """Initialize all required variables for camera AI tracking"""
-        # Frame center coordinates
-        self.frame_center_x = VIDEO['width'] // 2
-        self.frame_center_y = VIDEO['height'] // 2
-
-        # Camera state variables
-        self.camera_lock = threading.Lock()
-        self.camera_pan_angle = 90
-        self.camera_tilt_angle = 90
-        self.camera_tracking = False
-        self.tracking_enabled = False
-        self.human_detected = False
-        self.is_searching = False
-        self.human_distance = 0
-        self.last_roi_zone = "none"
-        self.human_position = (0, 0)
-        self.last_detection_time = 0
-
-        # PID control variables
-        self.pid_pan_integral = 0
-        self.pid_tilt_integral = 0
-        self.prev_error_pan = 0
-        self.prev_error_tilt = 0
 
     def stop_camera(self):
         self.is_camera_running = False
@@ -157,9 +129,9 @@ class CameraAIHandler:
 
         else:
             current_time = time.time()
-            if current_time - self.last_detection_time > 2.5:
+            if current_time - getattr(self, 'last_detection_time', 0) > 2.5:
                 self.human_detected = False
-                if self.camera_tracking and not self.is_searching:
+                if self.camera_tracking and not getattr(self, 'is_searching', False):
                     print("[CAMERA] Human not detected for 2.5+ seconds. Starting sweep search.")
                     self.is_searching = True
                     threading.Thread(target=self.camera_sweep_search, daemon=True).start()
@@ -202,41 +174,33 @@ class CameraAIHandler:
         return frame
 
     def camera_track_human(self, human_center):
+        """
+        Sadece P kontrolü ile kameranın pan-tilt servolarını
+        hareket ettirerek insanı dead-zone içinde tutmaya çalışır.
+        """
         if not self.camera_tracking or self.camera_lock.locked():
             return
 
         with self.camera_lock:
             center_x, center_y = human_center
-            error_pan = self.frame_center_x - center_x
-            error_tilt = self.frame_center_y - center_y
+
+            # Hata (ekrandaki hedef merkezden ne kadar uzak?)
+            error_pan = self.frame_center_x - center_x  # + ise hedef sol tarafta
+            error_tilt = self.frame_center_y - center_y  # + ise hedef yukarıda
 
             dead_zone_radius = CAMERA_TRACKING_SETTINGS['dead_zone_radius']
             if abs(error_pan) < dead_zone_radius and abs(error_tilt) < dead_zone_radius:
-                self.pid_pan_integral = 0
-                self.pid_tilt_integral = 0
-                self.prev_error_pan = 0
-                self.prev_error_tilt = 0
-                return
+                return  # hedef dead-zone içindeyse hareket etme
 
-            Kp = CAMERA_TRACKING_SETTINGS.get('p_gain', 0.08)
-            Ki = CAMERA_TRACKING_SETTINGS.get('i_gain', 0.005)
-            Kd = CAMERA_TRACKING_SETTINGS.get('d_gain', 0.01)
-            dt = 0.02
+            # Yalnızca P kazancı
+            Kp_pan = CAMERA_TRACKING_SETTINGS.get('p_gain_pan', 0.08)
+            Kp_tilt = CAMERA_TRACKING_SETTINGS.get('p_gain_tilt', 0.08)
 
-            self.pid_pan_integral += error_pan * dt
-            self.pid_pan_integral = max(-50, min(50, self.pid_pan_integral))
-            d_error_pan = (error_pan - self.prev_error_pan) / dt
-            self.prev_error_pan = error_pan
-            pan_adjustment = Kp * error_pan + Ki * self.pid_pan_integral + Kd * d_error_pan
-
-            self.pid_tilt_integral += error_tilt * dt
-            self.pid_tilt_integral = max(-50, min(50, self.pid_tilt_integral))
-            d_error_tilt = (error_tilt - self.prev_error_tilt) / dt
-            self.prev_error_tilt = error_tilt
-            tilt_adjustment = Kp * error_tilt + Ki * self.pid_tilt_integral + Kd * d_error_tilt
+            pan_adjustment = Kp_pan * error_pan
+            tilt_adjustment = Kp_tilt * error_tilt
 
             new_pan_angle = self.camera_pan_angle + pan_adjustment
-            new_tilt_angle = self.camera_tilt_angle - tilt_adjustment
+            new_tilt_angle = self.camera_tilt_angle - tilt_adjustment  # tilt servon ters çalışıyorsa – kullan
 
             self.set_camera_position(new_pan_angle, new_tilt_angle, smooth=True)
 

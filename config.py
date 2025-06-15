@@ -76,8 +76,7 @@ VIDEO = {
 
 
 CAMERA_TRACKING_SETTINGS = {
-    'p_gain': 0.08,
-    'i_gain': 0.005,
-    'd_gain': 0.01,
-    'dead_zone_radius': 30
+    "p_gain_pan":  0.08,   # yatay eksen hassasiyeti
+    "p_gain_tilt": 0.06,   # dikey eksen biraz daha yumuşak olsun
+    "dead_zone_radius": 30
 }
