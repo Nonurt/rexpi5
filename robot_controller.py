@@ -10,20 +10,23 @@ from adafruit_motor import servo
 # --- GPIO KÜTÜPHANESİ İÇİN GELİŞTİRME UYUMLULUK BLOĞU ---
 # Bu blok, kodun hem Raspberry Pi'de hem de geliştirme bilgisayarında
 # çökmeden çalışmasını sağlar.
+# --- GPIO KÜTÜPHANESİ İÇİN DAHA SAĞLAM UYUMLULUK BLOĞU ---
 try:
     # Gerçek Raspberry Pi donanımında bu kütüphaneyi yüklemeye çalış
     import RPi.GPIO as GPIO
 
-    print("[INIT] Real RPi.GPIO library loaded successfully.")
+    # Bu satırın çalışması için bile donanım kontrolü yapıyor, bu yüzden try bloğunda olmalı
+    GPIO.setmode(GPIO.BCM)
+    GPIO.cleanup()  # Önceki çalıştırmalardan kalan ayarları temizle
+    print("[INIT] Real RPi.GPIO library loaded and configured successfully.")
 except (ImportError, RuntimeError):
-    # Eğer kütüphane bulunamazsa (PC'de çalışıyorsa) veya donanım hatası verirse,
+    # Eğer kütüphane bulunamazsa VEYA donanım hatası verirse,
     # sahte bir kütüphane oluşturarak programın çökmesini engelle.
-    print("[INIT] WARNING: RPi.GPIO library not found. This is normal if not running on a Raspberry Pi.")
-    print("[INIT] Using a mock (fake) GPIO library for development purposes.")
+    print("[INIT] WARNING: RPi.GPIO library not found or NOT running on a Raspberry Pi.")
+    print("[INIT] Using a mock (fake) GPIO library for development.")
 
 
     class MockGPIO:
-        """Gerçek RPi.GPIO kütüphanesini taklit eden sahte bir sınıf."""
         BCM = 11
         OUT = 1
 
@@ -38,24 +41,19 @@ except (ImportError, RuntimeError):
             return self.MockPWM()
 
         def cleanup(self):
-            print("[MOCK_GPIO] Cleanup called. Pins are safe.")
+            print("[MOCK_GPIO] Cleanup called.")
 
         class MockPWM:
-            """Sahte PWM objesi"""
-
             def start(self, duty_cycle):
                 print(f"[MOCK_PWM] PWM started with {duty_cycle}% duty cycle.")
 
             def ChangeDutyCycle(self, duty_cycle):
-                # Bu mesaj çok sık basılabileceği için isteğe bağlı olarak yorum satırı yapılabilir
-                # print(f"[MOCK_PWM] Duty cycle changed to {duty_cycle}%")
                 pass
 
             def stop(self):
                 print("[MOCK_PWM] PWM stopped.")
 
 
-    # GPIO değişkenini sahte sınıfımızla değiştiriyoruz.
     GPIO = MockGPIO()
 # -------------------------------------------------------------
 
