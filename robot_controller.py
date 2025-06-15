@@ -7,17 +7,17 @@ import busio
 from adafruit_pca9685 import PCA9685
 from adafruit_motor import servo
 
-# --- MODERN GPIO KONTROLÜ (Raspberry Pi 5 UYUMLU) ---
-# Eski RPi.GPIO yerine, Pi 5 ile uyumlu gpiozero kütüphanesi kullanılıyor.
+# --- DONANIM KONTROLÜ (Pi 5 UYUMLU) ---
+# Yürüme fonksiyonu için I2C pinlerinin varlığını kontrol etmek yeterlidir.
+IS_ON_RASPBERRY_PI = False
 try:
-    from gpiozero import PWMLED
+    # Bu import, sadece donanım pinleri olan bir sistemde (Raspberry Pi gibi) başarılı olur.
+    import board
+    import busio
 
-    # from gpiozero.pins.pigpiod import PiGPIOFactory
-    # from gpiozero.pins.lgpio import LGPIOFactory
-    # PiGPIOFactory.pin_factory = LGPIOFactory() # lgpio'yu aktif etmek için
     IS_ON_RASPBERRY_PI = True
-    print("[INIT] Raspberry Pi detected. gpiozero library will be used for GPIO operations.")
-except (ImportError, RuntimeError):
+    print("[INIT] Raspberry Pi or similar hardware detected.")
+except (NotImplementedError, ImportError):
     IS_ON_RASPBERRY_PI = False
     print("[INIT] WARNING: Not running on a Raspberry Pi. Hardware functions will be simulated.")
 
@@ -59,16 +59,7 @@ class HumanTrackingServoController(MovementGaits, CameraAIHandler):
             self.servos = {}
             print("[WARNING] No servos configured as hardware is not available.")
 
-        # --- YENİ LED Donanım Başlatma (gpiozero ile) ---
-        self.led = None
-        if IS_ON_RASPBERRY_PI:
-            print("[INIT] Initializing LED on GPIO pin using gpiozero...")
-            self.led = PWMLED(config.LED_SETTINGS['pin'])
-        else:
-            print("[INIT] Skipping LED initialization (not on a Raspberry Pi).")
-
-        self.led_brightness = 0  # Bu değişkeni koruyoruz, % olarak kullanmaya devam edebiliriz
-        self.led_enabled = False
+        # --- LED ILE ILGILI TUM KODLAR KALDIRILDI ---
 
         # --- Robot Durum Değişkenleri ---
         self.walking = False
@@ -133,39 +124,12 @@ class HumanTrackingServoController(MovementGaits, CameraAIHandler):
         self.init_camera_position()
         print("[INIT] Controller initialized successfully.")
 
-    def set_led_brightness(self, brightness):
-        """LED parlaklığını %0-100 arasında ayarlar."""
-        self.led_brightness = max(0, min(100, brightness))
-        if self.led and self.led_enabled:
-            # gpiozero, parlaklığı 0.0 (kapalı) ile 1.0 (tam açık) arasında bir değer olarak alır
-            self.led.value = self.led_brightness / 100.0
-        print(f"[LED] Brightness set to {self.led_brightness}%")
-
-    def toggle_led(self, state=None):
-        """LED'i açar/kapatır."""
-        if state is not None:
-            self.led_enabled = state
-        else:
-            self.led_enabled = not self.led_enabled
-
-        if self.led:
-            if self.led_enabled:
-                # LED açıldığında, mevcut parlaklık değeriyle aç. Eğer parlaklık 0 ise, config'den gelen varsayılan ile aç.
-                brightness_val = self.led_brightness if self.led_brightness > 0 else config.LED_SETTINGS.get(
-                    'manual_brightness', 100)
-                self.set_led_brightness(brightness_val)  # Parlaklığı ve LED'i ayarlar
-            else:
-                self.led.off()  # LED'i tamamen kapatır
-
-        print(f"[LED] Turned {'ON' if self.led_enabled else 'OFF'}")
-        return self.led_enabled
+    # --- LED FONKSIYONLARI KALDIRILDI ---
 
     def cleanup(self):
         """Uygulama kapanırken donanımları güvenle kapatır."""
         print("[SYSTEM] Cleaning up resources...")
         self.stop_camera()
-        if self.led:
-            self.led.close()  # gpiozero nesnesini güvenle kapatır
         if self.pca:
             self.pca.deinit()
         print("[SYSTEM] Hardware cleanup complete.")
