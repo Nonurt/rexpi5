@@ -76,9 +76,12 @@ VIDEO = {
 
 
 CAMERA_TRACKING_SETTINGS = {
-    "p_gain_pan":  0.06,   # daha düşük P → daha az titreme
+    "p_gain_pan":  0.06,
+    "d_gain_pan":  0.02,
     "p_gain_tilt": 0.05,
+    "d_gain_tilt": 0.02,
     "dead_zone_radius": 30,
-    "max_step_pan":  7.0,  # derece/kare
+    "min_error": 5,            # px cinsinden eşik
+    "max_step_pan": 7.0,
     "max_step_tilt": 5.5
 }
