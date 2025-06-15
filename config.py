@@ -79,6 +79,6 @@ CAMERA_TRACKING_SETTINGS = {
     "p_gain_pan":  0.06,   # daha düşük P → daha az titreme
     "p_gain_tilt": 0.05,
     "dead_zone_radius": 30,
-    "max_step_pan":  2.0,  # derece/kare
-    "max_step_tilt": 1.5
+    "max_step_pan":  7.0,  # derece/kare
+    "max_step_tilt": 5.5
 }
