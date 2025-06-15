@@ -337,7 +337,17 @@ def rex_movement():
         return jsonify({'status': 'success', 'message': f'Executing REX {action}'})
     except Exception as e:
         return jsonify({'status': 'error', 'message': f'REX movement error: {str(e)}'})
+# app.py içinde
 
+@app.route('/toggle_gamma', methods=['POST'])
+def toggle_gamma():
+    is_enabled = robot.toggle_auto_gamma()
+    return jsonify(success=True, auto_gamma_enabled=is_enabled)
+
+@app.route('/toggle_histogram', methods=['POST'])
+def toggle_histogram():
+    is_enabled = robot.toggle_histogram_equalization()
+    return jsonify(success=True, histogram_equalization_enabled=is_enabled)
 
 # === UYGULAMAYI BAŞLATMA ===
 if __name__ == '__main__':

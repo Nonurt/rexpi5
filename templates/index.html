@@ -273,5 +273,27 @@
     </div>
 
     <script src="../static/js/app.js"></script>
+
+<div class="control-group">
+    <h4>Görüntü İyileştirme</h4>
+    <button onclick="toggleFeature('/toggle_gamma')">Otomatik Gamma</button>
+    <button onclick="toggleFeature('/toggle_histogram')">Histogram Eşitleme</button>
+</div>
+
+<script>
+    function toggleFeature(endpoint) {
+        fetch(endpoint, { method: 'POST' })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Success:', data);
+                // İsteğe bağlı: Butonun rengini veya durumunu değiştirebilirsiniz
+            })
+            .catch((error) => {
+                console.error('Error:', error);
+            });
+    }
+</script>
+
+
 </body>
 </html>

@@ -63,6 +63,11 @@ class HumanTrackingServoController(MovementGaits, CameraAIHandler):
         self.power_mode = "medium"
         self.power_settings = config.POWER_SETTINGS
 
+        # Görüntü işleme modlarını kapalı olarak başlat
+        self.auto_gamma_enabled = False
+        self.histogram_equalization_enabled = False
+
+
         # --- İnsan Takip Sistemi Değişkenleri ---
         self.human_detected = False
         self.human_position = None
