@@ -10,6 +10,7 @@
     <h1>🕷️ Advanced Spider Robot Control System</h1>
 
     <div class="container">
+        <!-- Video Panel -->
         <div class="panel video-panel">
             <h2>📹 Live Video Feed</h2>
             <div class="video-container">
@@ -23,31 +24,7 @@
             </div>
         </div>
 
-        <div class="panel">
-            <h2>✨ Görüntü İyileştirme</h2>
-            <div class="button-group">
-                <button class="toggle-btn" onclick="toggleFeature('/toggle_gamma')">Otomatik Gamma</button>
-                <button class="toggle-btn" onclick="toggleFeature('/toggle_histogram')">Histogram Eşitleme</button>
-            </div>
-        </div>
-
-        <div class="panel">
-            <h2>💡 LED Kontrolü</h2>
-            <div class="button-group">
-                <button id="ledBtnOff" class="toggle-btn active" onclick="setLedMode('off')">Kapalı</button>
-                <button id="ledBtnAuto" class="toggle-btn" onclick="setLedMode('auto')">Otomatik</button>
-                <button id="ledBtnManual" class="toggle-btn" onclick="setLedMode('manual')">Manuel</button>
-            </div>
-            <div class="setting-row" id="manualLedControl" style="display: none;">
-                <span class="setting-label">Manuel Parlaklık:</span>
-                <div class="setting-control">
-                    <input type="range" id="ledBrightness" class="range-input"
-                           min="0" max="100" value="50"
-                           oninput="setLedBrightness()">
-                    <span class="value-display" id="ledBrightnessValue">50%</span>
-                </div>
-            </div>
-        </div>
+        <!-- Status & Control Panel -->
         <div class="panel">
             <h2>📊 System Status</h2>
             <div class="status-panel" id="statusPanel">
@@ -90,6 +67,7 @@
             </select>
         </div>
 
+        <!-- Manual Control Panel -->
         <div class="panel">
             <h2>🎮 Manual Control</h2>
 
@@ -119,6 +97,7 @@
             </div>
         </div>
 
+        <!-- YENİ KAMERA AYARLARI PANELİ -->
         <div class="panel">
             <h2>📹 Advanced Camera Settings</h2>
 
@@ -183,6 +162,7 @@
             </div>
         </div>
 
+        <!-- REX Quad Style Movement Panel -->
         <div class="panel">
             <h2>🤖 REX Quad Style Movement</h2>
 
@@ -221,6 +201,7 @@
             </div>
         </div>
 
+        <!-- Advanced Movement Panel -->
         <div class="panel">
             <h2>🤖 Advanced Movement</h2>
 
