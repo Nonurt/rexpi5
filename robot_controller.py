@@ -7,55 +7,16 @@ import busio
 from adafruit_pca9685 import PCA9685
 from adafruit_motor import servo
 
-# --- GPIO KÜTÜPHANESİ İÇİN GELİŞTİRME UYUMLULUK BLOĞU ---
-# Bu blok, kodun hem Raspberry Pi'de hem de geliştirme bilgisayarında
-# çökmeden çalışmasını sağlar.
-# --- GPIO KÜTÜPHANESİ İÇİN DAHA SAĞLAM UYUMLULUK BLOĞU ---
+# --- DONANIM KONTROLÜ ---
+# Programın başında, gerçek bir Raspberry Pi üzerinde çalışıp çalışmadığını kontrol et.
+IS_ON_RASPBERRY_PI = False
 try:
-    # Gerçek Raspberry Pi donanımında bu kütüphaneyi yüklemeye çalış
     import RPi.GPIO as GPIO
 
-    # Bu satırın çalışması için bile donanım kontrolü yapıyor, bu yüzden try bloğunda olmalı
-    GPIO.setmode(GPIO.BCM)
-    GPIO.cleanup()  # Önceki çalıştırmalardan kalan ayarları temizle
-    print("[INIT] Real RPi.GPIO library loaded and configured successfully.")
+    IS_ON_RASPBERRY_PI = True
+    print("[INIT] Raspberry Pi detected. Real RPi.GPIO library will be used.")
 except (ImportError, RuntimeError):
-    # Eğer kütüphane bulunamazsa VEYA donanım hatası verirse,
-    # sahte bir kütüphane oluşturarak programın çökmesini engelle.
-    print("[INIT] WARNING: RPi.GPIO library not found or NOT running on a Raspberry Pi.")
-    print("[INIT] Using a mock (fake) GPIO library for development.")
-
-
-    class MockGPIO:
-        BCM = 11
-        OUT = 1
-
-        def setmode(self, mode):
-            print(f"[MOCK_GPIO] Mode set to BCM")
-
-        def setup(self, pin, mode):
-            print(f"[MOCK_GPIO] Pin {pin} setup as OUT")
-
-        def PWM(self, pin, frequency):
-            print(f"[MOCK_GPIO] PWM created on pin {pin} at {frequency}Hz")
-            return self.MockPWM()
-
-        def cleanup(self):
-            print("[MOCK_GPIO] Cleanup called.")
-
-        class MockPWM:
-            def start(self, duty_cycle):
-                print(f"[MOCK_PWM] PWM started with {duty_cycle}% duty cycle.")
-
-            def ChangeDutyCycle(self, duty_cycle):
-                pass
-
-            def stop(self):
-                print("[MOCK_PWM] PWM stopped.")
-
-
-    GPIO = MockGPIO()
-# -------------------------------------------------------------
+    print("[INIT] WARNING: Not running on a Raspberry Pi. GPIO functions will be simulated.")
 
 # Projemizdeki diğer modülleri import ediyoruz
 import config
@@ -73,17 +34,17 @@ class HumanTrackingServoController(MovementGaits, CameraAIHandler):
     def __init__(self):
         # --- Donanım Başlatma ---
         print("[INIT] Initializing I2C and PCA9685 Servo Controller...")
-        try:
-            self.i2c = busio.I2C(board.SCL, board.SDA)
-            self.pca = PCA9685(self.i2c)
-            self.pca.frequency = config.I2C_FREQUENCY
-            print("[INIT] PCA9685 Servo Controller configured successfully.")
-        except Exception as e:
-            print(f"[FATAL ERROR] Could not initialize PCA9685. Check I2C connection: {e}")
-            # PCA9685 olmadan sistemin çalışması anlamsız olduğu için çıkış yapılabilir.
-            # Ancak geliştirme için sahte bir PCA objesi de oluşturulabilir.
-            # Şimdilik devam etmesi için uyarı veriyoruz.
-            self.pca = None
+        self.pca = None
+        if IS_ON_RASPBERRY_PI:
+            try:
+                self.i2c = busio.I2C(board.SCL, board.SDA)
+                self.pca = PCA9685(self.i2c)
+                self.pca.frequency = config.I2C_FREQUENCY
+                print("[INIT] PCA9685 Servo Controller configured successfully.")
+            except Exception as e:
+                print(f"[FATAL ERROR] Could not initialize PCA9685. Check I2C connection: {e}")
+        else:
+            print("[INIT] Skipping PCA9685 initialization (not on a Raspberry Pi).")
 
         if self.pca:
             print("[INIT] Configuring servos from config file...")
@@ -93,17 +54,21 @@ class HumanTrackingServoController(MovementGaits, CameraAIHandler):
             print(f"[INIT] {len(self.servos)} servos configured.")
         else:
             self.servos = {}
-            print("[WARNING] No servos configured as PCA9685 is not available.")
+            print("[WARNING] No servos configured as hardware is not available.")
 
-        # --- LED Donanım Başlatma ---
-        print("[INIT] Initializing LED on GPIO pin...")
-        GPIO.setmode(GPIO.BCM)
-        GPIO.setup(config.LED_SETTINGS['pin'], GPIO.OUT)
-        self.led_pwm = GPIO.PWM(config.LED_SETTINGS['pin'], 100)  # 100 Hz frekans
-        self.led_pwm.start(0)  # Başlangıçta LED kapalı (duty cycle %0)
+        # --- LED Donanım Başlatma (Sadece Pi üzerindeyse) ---
+        self.led_pwm = None
+        if IS_ON_RASPBERRY_PI:
+            print("[INIT] Initializing LED on GPIO pin...")
+            GPIO.setmode(GPIO.BCM)
+            GPIO.setup(config.LED_SETTINGS['pin'], GPIO.OUT)
+            self.led_pwm = GPIO.PWM(config.LED_SETTINGS['pin'], 100)
+            self.led_pwm.start(0)
+        else:
+            print("[INIT] Skipping LED initialization (not on a Raspberry Pi).")
+
         self.led_brightness = 0
         self.led_enabled = False
-        # ---------------------------------------------
 
         # --- Robot Durum Değişkenleri ---
         self.walking = False
@@ -130,7 +95,6 @@ class HumanTrackingServoController(MovementGaits, CameraAIHandler):
         self.tilt_integral = 0
         self.tilt_last_error = 0
         self.last_pid_time = time.time()
-        # ----------------------------------------------------
 
         # --- Ayarları config dosyasından yükle ---
         print("[INIT] Loading settings from config.py...")
@@ -151,17 +115,14 @@ class HumanTrackingServoController(MovementGaits, CameraAIHandler):
         self.auto_gamma_enabled = False
         self.histogram_equalization_enabled = False
 
-        # --- İnsan Takip Sistemi Değişkenleri ---
+        # --- Diğer değişkenler ---
         self.human_detected = False
         self.human_position = None
         self.human_distance = 0
         self.frame_center_x = config.VIDEO['width'] // 2
         self.frame_center_y = config.VIDEO['height'] // 2
         self.last_action_time = 0
-
         self.distance_calibration = config.DISTANCE_CALIBRATION
-
-        # --- Kamera ve AI Nesneleri ---
         self.cap = None
         self.net = None
         self.is_camera_running = False
@@ -173,70 +134,67 @@ class HumanTrackingServoController(MovementGaits, CameraAIHandler):
         print("[INIT] Controller initialized successfully.")
 
     def set_led_brightness(self, brightness):
-        """LED parlaklığını %0-100 arasında ayarlar."""
+        """LED parlaklığını ayarlar (Sadece Pi üzerindeyse)."""
         self.led_brightness = max(0, min(100, brightness))
-        if self.led_enabled:
+        if self.led_enabled and self.led_pwm:
             self.led_pwm.ChangeDutyCycle(self.led_brightness)
         print(f"[LED] Brightness set to {self.led_brightness}%")
 
     def toggle_led(self, state=None):
-        """LED'i açar/kapatır."""
+        """LED'i açar/kapatır (Sadece Pi üzerindeyse)."""
         if state is not None:
             self.led_enabled = state
         else:
             self.led_enabled = not self.led_enabled
 
-        if self.led_enabled:
-            current_brightness = self.led_brightness if self.led_brightness > 0 else config.LED_SETTINGS[
-                'manual_brightness']
-            self.led_pwm.ChangeDutyCycle(current_brightness)
-        else:
-            self.led_pwm.ChangeDutyCycle(0)
+        if self.led_pwm:
+            if self.led_enabled:
+                current_brightness = self.led_brightness if self.led_brightness > 0 else config.LED_SETTINGS[
+                    'manual_brightness']
+                self.led_pwm.ChangeDutyCycle(current_brightness)
+            else:
+                self.led_pwm.ChangeDutyCycle(0)
+
         print(f"[LED] Turned {'ON' if self.led_enabled else 'OFF'}")
         return self.led_enabled
 
     def cleanup(self):
-        """Uygulama kapanırken donanımları güvenle kapatır."""
+        """Uygulama kapanırken donanımları güvenle kapatır (Sadece Pi üzerindeyse)."""
         print("[SYSTEM] Cleaning up resources...")
         self.stop_camera()
-        self.led_pwm.stop()
-        GPIO.cleanup()
-        if self.pca:
-            self.pca.deinit()
-        print("[SYSTEM] Cleanup complete.")
+        if IS_ON_RASPBERRY_PI:
+            if self.led_pwm:
+                self.led_pwm.stop()
+            GPIO.cleanup()
+            if self.pca:
+                self.pca.deinit()
+            print("[SYSTEM] Hardware cleanup complete.")
+        else:
+            print("[SYSTEM] Skipping hardware cleanup (not on a Raspberry Pi).")
 
     def get_power_settings(self):
-        """Mevcut güç modunun ayarlarını döndürür."""
         return self.power_settings[self.power_mode]
 
     def set_power_mode(self, mode):
-        """Güç modunu değiştirir (low, medium, high, max)."""
         if mode in self.power_settings:
             self.power_mode = mode
-            settings = self.get_power_settings()
-            print(f"[POWER] Power mode changed: {settings['name']}")
-            print(f"[POWER] {settings['description']}")
+            print(f"[POWER] Power mode changed: {self.power_settings[mode]['name']}")
             return True
         return False
 
     def track_human(self, human_center, distance, roi_zone):
-        """Ana insan takip mantığı. ROI kurallarına göre hareket kararı verir."""
         if self.walking:
             return
-
         current_time = time.time()
         settings = self.get_power_settings()
-
         if current_time - self.last_action_time < settings['cooldown']:
             return
-
         action = self.check_roi_distance_rules(distance, roi_zone)
-        print(f"[TRACKING] Action: {action}, Distance: {distance}cm, ROI: {roi_zone}")
 
         if action == "retreat":
             threading.Thread(target=self.rex_backward_gait, daemon=True).start()
         elif action == "stop":
-            print("[TRACKING] Stopping - Target in center and at a good distance.")
+            pass  # Hareket etme
         elif action == "turn":
             if human_center[0] < self.frame_center_x - 50:
                 threading.Thread(target=self.rex_turn_left, daemon=True).start()
@@ -250,49 +208,37 @@ class HumanTrackingServoController(MovementGaits, CameraAIHandler):
             else:
                 threading.Thread(target=self.rex_turn_right, daemon=True).start()
 
-        self.last_action_time = current_time
+        if action != "stop":
+            self.last_action_time = current_time
 
     def check_roi_distance_rules(self, distance, roi_zone):
-        """ROI mesafe kurallarını kontrol eder ve eylem belirler."""
         if distance <= self.roi_min_distance:
             return "retreat"
         elif distance <= self.roi_stop_distance:
-            if roi_zone == 'center':
-                return "stop"
-            else:
-                return "turn"
+            return "stop" if roi_zone == 'center' else "turn"
         else:
             return "approach"
 
     def detect_roi_zone(self, human_center):
-        """Verilen koordinatın hangi ROI bölgesinde olduğunu tespit eder."""
         if not self.roi_enabled:
             return 'center'
-
         x, y = human_center
         sorted_zones = sorted(self.roi_zones.items(), key=lambda item: item[1]['priority'])
-
         for zone_name, zone in sorted_zones:
             if (zone['x'] <= x <= zone['x'] + zone['w'] and
                     zone['y'] <= y <= zone['y'] + zone['h']):
                 return zone_name
-
         return 'center'
 
     def calculate_distance(self, bbox_height_px):
-        """Tespit edilen insanın bounding box yüksekliğinden mesafesini tahmin eder."""
-        if bbox_height_px <= 0:
-            return 0
-
+        if bbox_height_px <= 0: return 0
         cal = self.distance_calibration
         distance = (cal['person_height_cm'] * cal['camera_focal_length']) / bbox_height_px
-        distance = max(cal['min_distance_cm'], min(cal['max_distance_cm'], distance))
-
-        return int(distance)
+        return int(max(cal['min_distance_cm'], min(cal['max_distance_cm'], distance)))
 
     def set_servo_angle(self, servo_name, angle):
-        """Tek bir servonun açısını güvenli bir şekilde ayarlar."""
-        if not self.pca: return False  # Donanım yoksa bir şey yapma
+        """Tek bir servonun açısını ayarlar (Sadece PCA9685 bağlıysa)."""
+        if not self.pca: return False
         try:
             if servo_name in self.servos:
                 angle = max(0, min(180, angle))
@@ -304,15 +250,15 @@ class HumanTrackingServoController(MovementGaits, CameraAIHandler):
         return False
 
     def smooth_servo_move(self, servo_name, target_angle, steps=5):
-        """Bir servoyu mevcut açısından hedef açıya yumuşak bir şekilde hareket ettirir."""
-        if servo_name not in self.servos:
+        if servo_name not in self.servos or not self.pca:
             return
-
         current_angle = self.current_angles.get(servo_name, 90)
         step_size = (target_angle - current_angle) / steps
         settings = self.get_power_settings()
-
         for i in range(steps):
             new_angle = current_angle + (step_size * (i + 1))
             self.set_servo_angle(servo_name, new_angle)
             time.sleep(settings['speed_delay'])
+
+    # ... Geriye kalan tüm hareket fonksiyonları (rex_forward_gait vb.) bu sınıfta
+    # ... MovementGaits'ten miras alındığı için mevcuttur ve çalışacaktır.
