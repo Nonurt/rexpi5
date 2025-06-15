@@ -52,6 +52,13 @@ class CameraAIHandler:
             self.cap.release()
         print("[INFO] Camera stopped")
 
+    def init_camera_position(self):
+        """Kamera servosunu merkeze alır ve başlangıç pozisyonuna getirir."""
+        print("[CAMERA] Setting initial camera position...")
+        self.set_camera_position(pan_angle=90, tilt_angle=90, smooth=False)
+        time.sleep(1)
+        print("[CAMERA] Camera is in center position.")
+
     # ────────────────────────── STATE & PID VARIABLES ────────────────────
     def init_camera_ai_variables(self):
         # Frame geometrisi
