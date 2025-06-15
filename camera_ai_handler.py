@@ -17,7 +17,6 @@ class CameraAIHandler:
         """AI modelini config dosyasındaki yollardan yükler."""
         try:
             print("[INFO] Loading AI Model...")
-            # Ayarları config modülünden al
             self.net = cv2.dnn.readNetFromCaffe(AI_MODEL['prototxt_path'], AI_MODEL['model_path'])
             print("[INFO] AI Model loaded successfully!")
         except Exception as e:
@@ -32,12 +31,10 @@ class CameraAIHandler:
                 print("[ERROR] Cannot open camera.")
                 return False
 
-            # Görüntü boyutlarını config modülünden al
             self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, VIDEO['width'])
             self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, VIDEO['height'])
             self.is_camera_running = True
 
-            # Kamera döngüsünü ana programı bloklamayacak şekilde başlat
             camera_thread = threading.Thread(target=self.camera_loop, daemon=True)
             camera_thread.start()
 
@@ -56,6 +53,18 @@ class CameraAIHandler:
             self.cap.release()
         print("[INFO] Camera stopped")
 
+    # ----- YENİ EKLENEN FONKSİYON -----
+    def init_camera_position(self):
+        """Kamera servolarını başlangıç pozisyonuna (merkez) ayarlar."""
+        print("[CAMERA] Setting initial camera position...")
+        # Not: Bu fonksiyon, miras alındığı RobotController'daki
+        # set_camera_position metodunu kullanır.
+        self.set_camera_position(pan_angle=90, tilt_angle=90, smooth=False)
+        time.sleep(1)
+        print("[CAMERA] Camera is in center position.")
+
+    # ------------------------------------
+
     def camera_loop(self):
         """Sürekli olarak kameradan görüntü okuyan, işleyen ve saklayan ana döngü."""
         while self.is_camera_running:
@@ -65,18 +74,14 @@ class CameraAIHandler:
                     time.sleep(0.1)
                     continue
 
-                # AI modeli yüklendiyse insan tespiti yap
                 if self.net is not None:
                     frame = self.detect_humans(frame)
 
-                # Görüntü üzerine ROI ve durum bilgilerini çiz
                 frame = self.draw_roi_zones(frame)
                 frame = self.add_status_overlay(frame)
 
-                # İşlenmiş kareyi, web arayüzünde gösterilmesi için sakla
                 self.current_frame = frame
 
-                # FPS'i limitlemek için kısa bekleme
                 time.sleep(VIDEO['fps_delay'])
 
             except Exception as e:
@@ -86,7 +91,6 @@ class CameraAIHandler:
     def detect_humans(self, frame):
         """
         Yapay zeka modelini kullanarak görüntüdeki insanları tespit eder.
-        En güvenilir sonucu işler ve ilgili takip fonksiyonlarını tetikler.
         """
         if self.net is None:
             return frame
@@ -103,12 +107,10 @@ class CameraAIHandler:
             confidence = detections[0, 0, i, 2]
             class_id = int(detections[0, 0, i, 1])
 
-            # Tespit edilen nesne "person" ise ve güven skoru eşiğin üzerindeyse
             if class_id == AI_MODEL['person_class_id'] and confidence > AI_MODEL['confidence_threshold']:
                 box = detections[0, 0, i, 3:7] * np.array([w, h, w, h])
                 (startX, startY, endX, endY) = box.astype("int")
 
-                # En iyi tespiti seç
                 if confidence > best_confidence:
                     best_confidence = confidence
                     best_person = {
@@ -128,22 +130,17 @@ class CameraAIHandler:
             roi_zone = self.detect_roi_zone(center)
             self.last_roi_zone = roi_zone
 
-            # Tespit kutusunu ve bilgileri ekrana çiz
             cv2.rectangle(frame, (bbox[0], bbox[1]), (bbox[2], bbox[3]), (0, 255, 0), 2)
             cv2.putText(frame, f"Distance: {self.human_distance}cm", (bbox[0], bbox[1] - 10), cv2.FONT_HERSHEY_SIMPLEX,
                         0.6, (0, 255, 0), 2)
 
-            # Kamera ve robot takip modları aktifse ilgili fonksiyonları çağır
             if self.camera_tracking:
                 self.camera_track_human(center)
 
             if self.tracking_enabled:
-                # Not: `track_human` metodu ana `RobotController` sınıfındadır.
-                # Mixin sayesinde buradan çağrılabilir.
                 self.track_human(center, self.human_distance, roi_zone)
         else:
             self.human_detected = False
-            # İnsan bulunamadıysa ve kamera takibi aktifse, arama moduna geç
             if self.camera_tracking:
                 current_time = time.time()
                 if current_time - getattr(self, 'last_action_time', 0) > 3.0:
@@ -170,7 +167,6 @@ class CameraAIHandler:
             cv2.putText(frame, line, (10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
             cv2.putText(frame, line, (10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
 
-        # Kamera merkezini ve "Dead Zone" dairesini çiz
         cv2.circle(frame, (self.frame_center_x, self.frame_center_y), int(self.dead_zone_radius), (0, 255, 255), 1)
 
         return frame
@@ -197,35 +193,26 @@ class CameraAIHandler:
         with self.camera_lock:
             center_x, center_y = human_center
 
-            # Merkeze olan uzaklığı hesapla
             distance_from_center = np.sqrt(
                 (center_x - self.frame_center_x) ** 2 + (center_y - self.frame_center_y) ** 2)
 
-            # Eğer hedef "dead zone" içindeyse hareket etme
             if distance_from_center <= self.dead_zone_radius:
                 return
 
-            # X ekseni (Pan) kontrolü
             if center_x < self.frame_center_x - self.dead_zone_radius:
                 self.camera_pan_angle += self.camera_step_size
             elif center_x > self.frame_center_x + self.dead_zone_radius:
                 self.camera_pan_angle -= self.camera_step_size
 
-            # Y ekseni (Tilt) kontrolü
             if center_y < self.frame_center_y - self.dead_zone_radius:
                 self.camera_tilt_angle -= self.camera_step_size
             elif center_y > self.frame_center_y + self.dead_zone_radius:
                 self.camera_tilt_angle += self.camera_step_size
 
-            # Hesaplanan yeni pozisyonu servolara uygula
             self.set_camera_position(self.camera_pan_angle, self.camera_tilt_angle, smooth=True)
 
     def set_camera_position(self, pan_angle=None, tilt_angle=None, smooth=False):
         """Kamera servolarını belirtilen açılara ayarlar."""
-        # Bu metot `self.servos` ve `self.current_angles` gibi değişkenlere ihtiyaç duyar.
-        # Bu değişkenler, bu sınıfı miras alan RobotController sınıfında tanımlıdır.
-
-        # Pan açısını ayarla
         if pan_angle is not None:
             self.camera_pan_angle = max(CAMERA_SETTINGS['pan_min'], min(CAMERA_SETTINGS['pan_max'], pan_angle))
             if smooth:
@@ -233,7 +220,6 @@ class CameraAIHandler:
             else:
                 self.set_servo_angle('camera_pan', self.camera_pan_angle)
 
-        # Tilt açısını ayarla
         if tilt_angle is not None:
             self.camera_tilt_angle = max(CAMERA_SETTINGS['tilt_min'], min(CAMERA_SETTINGS['tilt_max'], tilt_angle))
             if smooth:
@@ -246,7 +232,6 @@ class CameraAIHandler:
         if not self.camera_tracking: return
         print("[CAMERA] Human lost. Starting sweep search...")
 
-        # Farklı pan pozisyonlarını tara
         positions = [90, 60, 120, 45, 135, 90]
         for pan_pos in positions:
             if self.human_detected:
@@ -255,6 +240,5 @@ class CameraAIHandler:
             self.set_camera_position(pan_angle=pan_pos, smooth=True)
             time.sleep(0.5)
 
-        # Arama bittiğinde merkeze dön
         if not self.human_detected:
             self.set_camera_position(90, 90, smooth=True)
