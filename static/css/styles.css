@@ -1,311 +1,473 @@
-* {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
+// Global variables
+let cameraSettings = {
+    deadZoneRadius: 60,
+    stepSize: 3,
+    smoothDelay: 0.05
+};
+
+// YENİ KAMERA AYARLARI FUNKTIONSYONLARI
+function updateCameraSettings() {
+    const deadZoneRadius = parseInt(document.getElementById('deadZoneRadius').value);
+    const stepSize = parseInt(document.getElementById('cameraStepSize').value);
+    const smoothDelayValue = parseInt(document.getElementById('smoothDelay').value);
+    const smoothDelay = smoothDelayValue / 1000; // Convert to seconds
+
+    // Update display values
+    document.getElementById('deadZoneValue').textContent = deadZoneRadius + 'px';
+    document.getElementById('stepSizeValue').textContent = stepSize + '°';
+    document.getElementById('smoothDelayValue').textContent = smoothDelay.toFixed(3) + 's';
+
+    // Send to server
+    fetch('/api/camera_settings', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            dead_zone_radius: deadZoneRadius,
+            step_size: stepSize,
+            smooth_delay: smoothDelay
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            cameraSettings = data.settings;
+            showMessage('Camera settings updated!', 'success');
+        } else {
+            showMessage('Settings update failed: ' + data.message, 'error');
+        }
+    })
+    .catch(error => {
+        showMessage('Settings error: ' + error, 'error');
+    });
 }
 
-body {
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
-    color: white;
-    min-height: 100vh;
-    padding: 20px;
+function cameraPreset(preset) {
+    let panAngle, tiltAngle;
+
+    switch(preset) {
+        case 'home':
+            panAngle = 90;
+            tiltAngle = 90;
+            break;
+        case 'scan':
+            // Scanning movement
+            scanCamera();
+            return;
+        case 'low':
+            panAngle = 90;
+            tiltAngle = 120;
+            break;
+        case 'high':
+            panAngle = 90;
+            tiltAngle = 60;
+            break;
+    }
+
+    fetch('/api/camera_control', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            action: 'direct',
+            pan_angle: panAngle,
+            tilt_angle: tiltAngle
+        })
+    })
+    .then(response => response.json())
+    .then(data => showMessage(data.message, data.status === 'success' ? 'success' : 'error'));
 }
 
-.container {
-    max-width: 1400px;
-    margin: 0 auto;
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    gap: 20px;
+function scanCamera() {
+    showMessage('Camera scanning mode activated!', 'info');
+
+    const scanSequence = [
+        {pan: 60, tilt: 90},
+        {pan: 90, tilt: 60},
+        {pan: 120, tilt: 90},
+        {pan: 90, tilt: 120},
+        {pan: 90, tilt: 90}  // Return to center
+    ];
+
+    let step = 0;
+    const scanInterval = setInterval(() => {
+        if (step >= scanSequence.length) {
+            clearInterval(scanInterval);
+            showMessage('Camera scan completed!', 'success');
+            return;
+        }
+
+        const position = scanSequence[step];
+        fetch('/api/camera_control', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                action: 'direct',
+                pan_angle: position.pan,
+                tilt_angle: position.tilt
+            })
+        });
+
+        step++;
+    }, 2000);
 }
 
-.panel {
-    background: rgba(255, 255, 255, 0.1);
-    backdrop-filter: blur(10px);
-    border-radius: 15px;
-    padding: 20px;
-    border: 1px solid rgba(255, 255, 255, 0.2);
+// EXISTING FUNCTIONS (updated with camera info)
+function startCamera() {
+    fetch('/api/start_camera', {method: 'POST'})
+    .then(response => response.json())
+    .then(data => showMessage(data.message, data.status === 'success' ? 'success' : 'error'));
 }
 
-.video-panel {
-    grid-column: 1 / -1;
-    text-align: center;
+function toggleTracking() {
+    fetch('/api/toggle_tracking', {method: 'POST'})
+    .then(response => response.json())
+    .then(data => {
+        showMessage(data.message, 'success');
+        document.getElementById('trackingBtn').classList.toggle('active', data.tracking);
+    });
 }
 
-.video-container {
-    position: relative;
-    display: inline-block;
-    border-radius: 10px;
-    overflow: hidden;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+function toggleCameraTracking() {
+    fetch('/api/toggle_camera_tracking', {method: 'POST'})
+    .then(response => response.json())
+    .then(data => {
+        showMessage(data.message, 'success');
+        document.getElementById('cameraTrackingBtn').classList.toggle('active', data.camera_tracking);
+
+        // Update tracking mode display
+        document.getElementById('trackingMode').textContent = data.camera_tracking ? 'AUTO' : 'MANUAL';
+    });
 }
 
-#videoFeed {
-    width: 640px;
-    height: 480px;
-    border: none;
-    background-color: #000;
+function setPowerMode() {
+    const mode = document.getElementById('powerMode').value;
+    fetch('/api/set_power_mode', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({mode: mode})
+    })
+    .then(response => response.json())
+    .then(data => showMessage(data.message, data.status === 'success' ? 'success' : 'error'));
 }
 
-h1 {
-    text-align: center;
-    margin-bottom: 30px;
-    font-size: 2.5em;
-    background: linear-gradient(45deg, #ff6b6b, #4ecdc4);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+function manualMove(action) {
+    fetch('/api/manual_move', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({action: action})
+    })
+    .then(response => response.json())
+    .then(data => showMessage(data.message, data.status === 'success' ? 'success' : 'error'));
 }
 
-h2 {
-    margin-bottom: 15px;
-    color: #4ecdc4;
-    border-bottom: 2px solid #4ecdc4;
-    padding-bottom: 5px;
+function cameraControl(action) {
+    fetch('/api/camera_control', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({action: action})
+    })
+    .then(response => response.json())
+    .then(data => showMessage(data.message, data.status === 'success' ? 'success' : 'error'));
 }
 
-h3 {
-    margin: 15px 0 10px 0;
-    color: #ff9f43;
-    font-size: 1.1em;
+function advancedMove(action) {
+    fetch('/api/advanced_move', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({action: action})
+    })
+    .then(response => response.json())
+    .then(data => showMessage(data.message, data.status === 'success' ? 'success' : 'error'));
 }
 
-.button-group {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-    gap: 10px;
-    margin-bottom: 20px;
+function adaptiveWalk() {
+    const distance = document.getElementById('walkDistance').value;
+    const direction = document.getElementById('walkDirection').value;
+
+    fetch('/api/advanced_move', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            action: 'adaptive_walk',
+            direction: direction,
+            distance: parseInt(distance)
+        })
+    })
+    .then(response => response.json())
+    .then(data => showMessage(data.message, data.status === 'success' ? 'success' : 'error'));
 }
 
-.button-row {
-    display: flex;
-    justify-content: center;
-    gap: 10px;
-    margin-top: 10px;
+function multiStep() {
+    const steps = document.getElementById('stepCount').value;
+    const direction = document.getElementById('walkDirection').value;
+
+    fetch('/api/advanced_move', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            action: 'multi_step',
+            direction: direction,
+            steps: parseInt(steps)
+        })
+    })
+    .then(response => response.json())
+    .then(data => showMessage(data.message, data.status === 'success' ? 'success' : 'error'));
 }
 
-button {
-    background: linear-gradient(45deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    border: none;
-    padding: 12px 20px;
-    border-radius: 8px;
-    cursor: pointer;
-    font-weight: bold;
-    transition: all 0.3s ease;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+function updateROI() {
+    const stopDistance = document.getElementById('stopDistance').value;
+    const minDistance = document.getElementById('minDistance').value;
+    const enabled = document.getElementById('roiEnabled').checked;
+
+    document.getElementById('stopDistanceValue').textContent = stopDistance;
+    document.getElementById('minDistanceValue').textContent = minDistance;
+
+    fetch('/api/roi_settings', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            stop_distance: parseInt(stopDistance),
+            min_distance: parseInt(minDistance),
+            enabled: enabled
+        })
+    })
+    .then(response => response.json())
+    .then(data => showMessage(data.message, 'success'));
 }
 
-button:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+function emergencyStop() {
+    fetch('/api/stop_all', {method: 'POST'})
+    .then(response => response.json())
+    .then(data => {
+        showMessage(data.message, 'error');
+        // Reset all toggle buttons
+        document.querySelectorAll('.toggle-btn').forEach(btn => btn.classList.remove('active'));
+        document.getElementById('trackingMode').textContent = 'MANUAL';
+    });
 }
 
-button:active {
-    transform: translateY(0);
+function updateStatus() {
+    fetch('/api/status')
+    .then(response => response.json())
+    .then(data => {
+        document.getElementById('trackingStatus').textContent = data.tracking_enabled ? 'ON' : 'OFF';
+        document.getElementById('trackingStatus').className = 'status-value ' + (data.tracking_enabled ? 'active' : 'inactive');
+
+        document.getElementById('cameraTrackingStatus').textContent = data.camera_tracking ? 'ON' : 'OFF';
+        document.getElementById('cameraTrackingStatus').className = 'status-value ' + (data.camera_tracking ? 'active' : 'inactive');
+
+        document.getElementById('humanStatus').textContent = data.human_detected ? 'YES' : 'NO';
+        document.getElementById('humanStatus').className = 'status-value ' + (data.human_detected ? 'active' : 'inactive');
+
+        document.getElementById('distanceStatus').textContent = data.human_distance + ' cm';
+        document.getElementById('roiStatus').textContent = data.roi_zone.toUpperCase();
+        document.getElementById('powerStatus').textContent = data.power_mode.toUpperCase();
+
+        document.getElementById('walkingStatus').textContent = data.walking ? 'YES' : 'NO';
+        document.getElementById('walkingStatus').className = 'status-value ' + (data.walking ? 'active' : 'inactive');
+
+        // Update camera position display
+        if (data.camera_position) {
+            document.getElementById('panPosition').textContent = data.camera_position.pan + '°';
+            document.getElementById('tiltPosition').textContent = data.camera_position.tilt + '°';
+        }
+
+        document.getElementById('trackingMode').textContent = data.camera_tracking ? 'AUTO' : 'MANUAL';
+    })
+    .catch(error => console.log('Status update error:', error));
 }
 
-.emergency-btn {
-    background: linear-gradient(45deg, #ff6b6b, #ee5a24) !important;
-    font-size: 1.1em;
-    padding: 15px 25px;
+function showMessage(text, type = 'success') {
+    const message = document.createElement('div');
+    message.className = `message ${type}`;
+    message.textContent = text;
+    document.body.appendChild(message);
+
+    setTimeout(() => message.classList.add('show'), 100);
+    setTimeout(() => {
+        message.classList.remove('show');
+        setTimeout(() => document.body.removeChild(message), 300);
+    }, 3000);
 }
 
-.toggle-btn.active {
-    background: linear-gradient(45deg, #2ed573, #1e90ff) !important;
-    box-shadow: 0 0 15px rgba(46, 213, 115, 0.5);
+// Initialize camera settings on page load
+window.addEventListener('load', function() {
+    updateCameraSettings();
+});
+
+// Update status every 2 seconds
+setInterval(updateStatus, 2000);
+
+// === REX QUAD STYLE FUNCTIONS ===
+function rexMovement(action) {
+    fetch('/api/rex_movement', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({action: action})
+    })
+    .then(response => response.json())
+    .then(data => showMessage(data.message, data.status === 'success' ? 'success' : 'error'));
 }
 
-.status-panel {
-    background: rgba(0, 0, 0, 0.3);
-    border-radius: 10px;
-    padding: 15px;
-    margin-bottom: 20px;
+function updateRexStance() {
+    const height = document.getElementById('rexStanceHeight').value;
+    document.getElementById('rexStanceValue').textContent = height + '°';
+
+    fetch('/api/rex_stance_control', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({height: parseInt(height)})
+    })
+    .then(response => response.json())
+    .then(data => showMessage(data.message, 'success'));
 }
 
-.status-item {
-    display: flex;
-    justify-content: space-between;
-    margin-bottom: 8px;
-    padding: 5px 0;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-}
+let rexModeEnabled = false;
+function toggleRexMode() {
+    rexModeEnabled = !rexModeEnabled;
+    const btn = document.getElementById('rexModeBtn');
 
-.status-value {
-    font-weight: bold;
-}
+    if (rexModeEnabled) {
+        btn.classList.add('active');
+        btn.textContent = '🤖 REX Mode ON';
+        showMessage('REX Quad mode activated! All movements now use ESP32 REX algorithms!', 'success');
 
-.status-value.active, .status-value.ON, .status-value.YES {
-    color: #2ed573;
-}
+        // Override existing movement functions to use REX
+        window.originalManualMove = window.manualMove;
+        window.manualMove = function(action) {
+            const rexActions = {
+                'forward': 'rex_forward',
+                'left': 'rex_left',
+                'right': 'rex_right',
+                'back': 'rex_backward',
+                'stance': 'rex_stabilize'
+            };
 
-.status-value.inactive, .status-value.OFF, .status-value.NO {
-    color: #ff6b6b;
-}
+            if (rexActions[action]) {
+                rexMovement(rexActions[action]);
+                showMessage(`REX Mode: Executing ${action} with 8-phase algorithm`, 'info');
+            } else {
+                window.originalManualMove(action);
+            }
+        };
+    } else {
+        btn.classList.remove('active');
+        btn.textContent = '🤖 Enable REX Mode';
+        showMessage('REX Quad mode deactivated - Back to normal spider movements', 'info');
 
-select, input[type="text"], input[type="number"] {
-    background: rgba(255, 255, 255, 0.1);
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    color: white;
-    padding: 8px 12px;
-    border-radius: 5px;
-    margin: 5px 0;
-    width: 100%;
-}
-
-select option {
-    background: #2c3e50;
-    color: white;
-}
-
-.direction-pad {
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    grid-template-rows: 1fr 1fr 1fr;
-    gap: 5px;
-    margin: 15px 0;
-}
-
-.direction-pad button {
-    padding: 15px;
-    font-size: 1.2em;
-}
-
-.direction-pad .up { grid-area: 1 / 2 / 2 / 3; }
-.direction-pad .left { grid-area: 2 / 1 / 3 / 2; }
-.direction-pad .center { grid-area: 2 / 2 / 3 / 3; }
-.direction-pad .right { grid-area: 2 / 3 / 3 / 4; }
-.direction-pad .down { grid-area: 3 / 2 / 4 / 3; }
-
-.camera-settings {
-    background: rgba(255, 255, 255, 0.05);
-    border-radius: 10px;
-    padding: 15px;
-    margin-bottom: 15px;
-}
-
-.setting-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 10px;
-}
-
-.setting-label {
-    font-size: 0.9em;
-    color: #4ecdc4;
-    min-width: 120px;
-}
-
-.setting-control {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-grow: 1;
-}
-
-input[type="range"] {
-    -webkit-appearance: none;
-    width: 100%;
-    height: 8px;
-    background: rgba(0, 0, 0, 0.5);
-    border-radius: 5px;
-    outline: none;
-}
-
-input[type="range"]::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 20px;
-    height: 20px;
-    background: #4ecdc4;
-    cursor: pointer;
-    border-radius: 50%;
-}
-
-.value-display {
-    background: rgba(0, 0, 0, 0.3);
-    padding: 4px 8px;
-    border-radius: 4px;
-    min-width: 60px;
-    text-align: center;
-    font-size: 0.9em;
-    color: #2ed573;
-}
-
-.message {
-    position: fixed;
-    top: 20px;
-    right: 20px;
-    padding: 15px 20px;
-    border-radius: 8px;
-    color: white;
-    font-weight: bold;
-    z-index: 1000;
-    transform: translateX(120%);
-    transition: transform 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-    box-shadow: 0 5px 15px rgba(0,0,0,0.3);
-}
-
-.message.show {
-    transform: translateX(0);
-}
-
-.message.success { background: linear-gradient(45deg, #2ed573, #1e90ff); }
-.message.error { background: linear-gradient(45deg, #ff6b6b, #ee5a24); }
-.message.info { background: linear-gradient(45deg, #667eea, #764ba2); }
-
-
-/* === YENİ EKLENEN PID PANELİ STİLLERİ === */
-
-.pid-controls {
-    display: flex;
-    gap: 20px;
-    margin-top: 15px;
-    margin-bottom: 15px;
-}
-
-.pid-axis {
-    flex: 1;
-    background: rgba(0, 0, 0, 0.2);
-    padding: 15px;
-    border-radius: 10px;
-}
-
-.pid-axis h4 {
-    margin: 0 0 15px 0;
-    padding-bottom: 5px;
-    color: #ff9f43;
-    font-size: 1em;
-    text-align: center;
-    border-bottom: 1px solid #ff9f43;
-}
-
-.pid-axis .setting-row label {
-    min-width: 30px; /* Kp, Ki, Kd etiketlerini hizalamak için */
-    color: white;
-}
-
-/* === MEDYA SORGULARI (RESPONSIVE TASARIM) === */
-
-@media (max-width: 1200px) {
-    .container {
-        grid-template-columns: 1fr 1fr;
+        // Restore original movement functions
+        if (window.originalManualMove) {
+            window.manualMove = window.originalManualMove;
+        }
     }
 }
 
-@media (max-width: 768px) {
-    .container {
-        grid-template-columns: 1fr;
-    }
+function rexDemo() {
+    showMessage('Starting REX Quad demo sequence...', 'info');
 
-    #videoFeed {
-        width: 100%;
-        height: auto;
-    }
+    const sequence = [
+        {action: 'rex_stabilize', msg: 'REX Stabilizing...'},
+        {action: 'rex_lean_left', msg: 'REX Leaning Left...'},
+        {action: 'rex_lean_right', msg: 'REX Leaning Right...'},
+        {action: 'rex_lean_forward', msg: 'REX Leaning Forward...'},
+        {action: 'rex_lean_back', msg: 'REX Leaning Back...'},
+        {action: 'rex_forward', msg: 'REX Forward Gait...'},
+        {action: 'rex_left', msg: 'REX Left Turn...'},
+        {action: 'rex_right', msg: 'REX Right Turn...'},
+        {action: 'rex_backward', msg: 'REX Backward Gait...'},
+        {action: 'rex_stabilize', msg: 'REX Demo Complete!'}
+    ];
 
-    .pid-controls {
-        flex-direction: column; /* Küçük ekranlarda PID panellerini alt alta getir */
-    }
+    let step = 0;
+    const demoInterval = setInterval(() => {
+        if (step >= sequence.length) {
+            clearInterval(demoInterval);
+            showMessage('REX Quad demo completed! All ESP32 algorithms tested!', 'success');
+            return;
+        }
+
+        const current = sequence[step];
+        rexMovement(current.action);
+        showMessage(current.msg, 'info');
+        step++;
+    }, 4000); // 4 saniye aralık
 }
+
+
+function toggleFeature(endpoint) {
+    fetch(endpoint, { method: 'POST' })
+        .then(response => response.json())
+        .then(data => {
+            console.log('Success:', data);
+            // Butonun durumunu belirten bir mesaj gösterelim
+            const featureName = endpoint.includes('gamma') ? 'Auto Gamma' : 'Histogram Equalization';
+            const status = Object.values(data)[1] ? 'enabled' : 'disabled'; // Gelen yanıta göre durumu al
+            showMessage(`${featureName} ${status}.`, 'success');
+        })
+        .catch((error) => {
+            console.error('Error:', error);
+            showMessage(`Error toggling feature: ${error}`, 'error');
+        });
+}
+// app.js dosyanızın sonuna ekleyin
+
+// --- LED KONTROL FONKSİYONLARI ---
+
+// Sunucuya sürekli istek göndermemek için debounce (gecikme) mekanizması
+let ledBrightnessTimeout;
+
+function setLedMode(mode) {
+    // Butonların aktif durumunu güncelle
+    document.getElementById('ledBtnOff').classList.toggle('active', mode === 'off');
+    document.getElementById('ledBtnAuto').classList.toggle('active', mode === 'auto');
+    document.getElementById('ledBtnManual').classList.toggle('active', mode === 'manual');
+
+    // Manuel parlaklık kontrolünü sadece manuel modda göster
+    const manualControl = document.getElementById('manualLedControl');
+    manualControl.style.display = (mode === 'manual') ? 'flex' : 'none';
+
+    // Sunucuya modu gönder
+    fetch('/set_led_mode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: mode })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            showMessage(data.message, 'success');
+            // Eğer moda manuel olarak geçildiyse, mevcut slider değeriyle parlaklığı ayarla
+            if (mode === 'manual') {
+                setLedBrightness();
+            }
+        } else {
+            showMessage(data.message, 'error');
+        }
+    });
+}
+
+function setLedBrightness() {
+    const brightnessSlider = document.getElementById('ledBrightness');
+    const brightnessValue = parseInt(brightnessSlider.value);
+
+    // Görünen değeri güncelle
+    document.getElementById('ledBrightnessValue').textContent = brightnessValue + '%';
+
+    // Sunucuyu aşırı yüklememek için debounce kullan
+    clearTimeout(ledBrightnessTimeout);
+    ledBrightnessTimeout = setTimeout(() => {
+        fetch('/set_led_brightness', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ brightness: brightnessValue })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status !== 'success') {
+                showMessage(data.message, 'error');
+            }
+        });
+    }, 250); // Kullanıcı kaydırmayı bıraktıktan 250ms sonra gönder
+}
+
+// Initial status update
+updateStatus();

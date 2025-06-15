@@ -1,3 +1,5 @@
+# robot_controller.py
+
 import time
 import threading
 import board
@@ -197,7 +199,7 @@ class HumanTrackingServoController(MovementGaits, CameraAIHandler):
         except Exception as e:
             # Genellikle I2C bağlantı hatalarında bu hata oluşur
             print(f"[ERROR] Servo '{servo_name}' could not be set: {e}")
-            return False
+        return False
 
     def smooth_servo_move(self, servo_name, target_angle, steps=5):
         """Bir servoyu mevcut açısından hedef açıya yumuşak bir şekilde hareket ettirir."""

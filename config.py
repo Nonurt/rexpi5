@@ -64,7 +64,7 @@ AI_MODEL = {
     'model_path': "/home/legendeltax/servo_control/models/MobileNetSSD_deploy.caffemodel",
     'classes': ["background", "aeroplane", "bicycle", "bird", "boat", "bottle", "bus", "car", "cat", "chair", "cow", "diningtable", "dog", "horse", "motorbike", "person", "pottedplant", "sheep", "sofa", "train", "tvmonitor"],
     'person_class_id': 15,
-    'confidence_threshold': 0.3
+    'confidence_threshold': 0.2
 }
 
 # Kamera Görüntü Ayarları
@@ -74,26 +74,14 @@ VIDEO = {
     'fps_delay': 0.033 # ~30 FPS
 }
 
-# config.py
 
-# ... diğer ayarlar ...
-
-CAMERA_SETTINGS = {
-    'smooth_delay': 0.05,
-    'dead_zone_radius': 40,  # Ölü bölgeyi biraz küçültebiliriz, 40 iyi bir başlangıç
-    'step_size': 3,  # Bu artık P-Controller'da kullanılmayacak ama kalabilir
-    'pan_min': 20,
-    'pan_max': 160,
-    'tilt_min': 45,
-    'tilt_max': 135,
-
-    # --- YENİ ORANSAL KONTROL AYARLARI ---
-    'p_gain_pan': 0.04,
-    # Yatay (Pan) hareketin tepki katsayısı. Düşük değer daha yumuşak, yüksek değer daha agresif yapar. (0.01 - 0.1 arası idealdir)
-    'p_gain_tilt': 0.05,
-    # Dikey (Tilt) hareketin tepki katsayısı. Genellikle pan'dan biraz farklı olabilir. (0.01 - 0.1 arası idealdir)
-    'max_adjustment': 8
-    # Tek bir karede servonun en fazla kaç derece hareket edebileceği. Ani sıçramaları önler. (5-15 arası idealdir)
+CAMERA_TRACKING_SETTINGS = {
+    'p_gain': 0.04,  # Orantısal kazanç. Hareket hızını belirler. 0.03-0.08 arası bir değerle başlayın.
+    'dead_zone_radius': 25  # Piksel cinsinden. Bu alan içinde kamera hareket etmez.
 }
 
-# ... diğer ayarlar ...
+LED_SETTINGS = {
+    'pin': 18,  # LED'in bağlı olduğu BCM GPIO pin numarası
+    'brightness_threshold': 80, # Bu parlaklık değerinin altında LED otomatik olarak yanmaya başlar (0-255)
+    'manual_brightness': 50 # Manuel modda başlangıç parlaklığı (% olarak)
+}
