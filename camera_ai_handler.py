@@ -174,35 +174,40 @@ class CameraAIHandler:
         return frame
 
     def camera_track_human(self, human_center):
-        """
-        Sadece P kontrolü ile kameranın pan-tilt servolarını
-        hareket ettirerek insanı dead-zone içinde tutmaya çalışır.
-        """
         if not self.camera_tracking or self.camera_lock.locked():
             return
 
         with self.camera_lock:
-            center_x, center_y = human_center
+            cx, cy = human_center
+            err_pan = self.frame_center_x - cx
+            err_tilt = self.frame_center_y - cy
 
-            # Hata (ekrandaki hedef merkezden ne kadar uzak?)
-            error_pan = self.frame_center_x - center_x  # + ise hedef sol tarafta
-            error_tilt = self.frame_center_y - center_y  # + ise hedef yukarıda
+            # —— 1) Dead-zone + histerezis ————————————————
+            dz = CAMERA_TRACKING_SETTINGS['dead_zone_radius']
+            dz_hyst = dz * 1.3  # çıkarken biraz daha tolerans
+            if abs(err_pan) < dz and abs(err_tilt) < dz:
+                return
+            if (abs(err_pan) < dz_hyst and abs(err_tilt) < dz_hyst and
+                    max(abs(err_pan), abs(err_tilt)) < 5):  # 5-px min hata
+                return
 
-            dead_zone_radius = CAMERA_TRACKING_SETTINGS['dead_zone_radius']
-            if abs(error_pan) < dead_zone_radius and abs(error_tilt) < dead_zone_radius:
-                return  # hedef dead-zone içindeyse hareket etme
+            # —— 2) Orantısal kazanç ————————————————
+            Kp_pan = CAMERA_TRACKING_SETTINGS.get('p_gain_pan', 0.06)
+            Kp_tilt = CAMERA_TRACKING_SETTINGS.get('p_gain_tilt', 0.05)
 
-            # Yalnızca P kazancı
-            Kp_pan = CAMERA_TRACKING_SETTINGS.get('p_gain_pan', 0.08)
-            Kp_tilt = CAMERA_TRACKING_SETTINGS.get('p_gain_tilt', 0.08)
+            pan_adj = Kp_pan * err_pan
+            tilt_adj = Kp_tilt * err_tilt  # + yukarı ise kamerayı aşağı yatırmak istiyorsan – yap
 
-            pan_adjustment = Kp_pan * error_pan
-            tilt_adjustment = Kp_tilt * error_tilt
+            # —— 3) Slew-rate (derece/kare) sınırı ————————
+            max_step_pan = CAMERA_TRACKING_SETTINGS.get('max_step_pan', 2.0)
+            max_step_tilt = CAMERA_TRACKING_SETTINGS.get('max_step_tilt', 1.5)
+            pan_adj = max(-max_step_pan, min(max_step_pan, pan_adj))
+            tilt_adj = max(-max_step_tilt, min(max_step_tilt, tilt_adj))
 
-            new_pan_angle = self.camera_pan_angle + pan_adjustment
-            new_tilt_angle = self.camera_tilt_angle - tilt_adjustment  # tilt servon ters çalışıyorsa – kullan
+            new_pan = self.camera_pan_angle + pan_adj
+            new_tilt = self.camera_tilt_angle - tilt_adj  # ters servo ise “-” tut
 
-            self.set_camera_position(new_pan_angle, new_tilt_angle, smooth=True)
+            self.set_camera_position(new_pan, new_tilt, smooth=True)
 
     def set_camera_position(self, pan_angle=None, tilt_angle=None, smooth=False):
         invert_pan = CAMERA_SETTINGS.get("invert_pan", False)
