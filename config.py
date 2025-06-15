@@ -79,3 +79,9 @@ CAMERA_TRACKING_SETTINGS = {
     'p_gain': 0.04,  # Orantısal kazanç. Hareket hızını belirler. 0.03-0.08 arası bir değerle başlayın.
     'dead_zone_radius': 25  # Piksel cinsinden. Bu alan içinde kamera hareket etmez.
 }
+
+LED_SETTINGS = {
+    'pin': 18,  # LED'in bağlı olduğu BCM GPIO pin numarası
+    'brightness_threshold': 80, # Bu parlaklık değerinin altında LED otomatik olarak yanmaya başlar (0-255)
+    'manual_brightness': 50 # Manuel modda başlangıç parlaklığı (% olarak)
+}
