@@ -1,88 +1,258 @@
-<!doctype html><html lang="en"><head>
-  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>REX-Pi5 Control</title>
-  <link rel="stylesheet" href="/static/css/styles.css">
-  <script src="/static/js/app.js" defer></script>
-</head><body>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🕷️ Advanced Spider Robot Control</title>
+    <link rel="stylesheet" href="./static/css/styles.css">
+</head>
+<body>
+    <h1>🕷️ Advanced Spider Robot Control System</h1>
 
-<div class="main">
-  <!-- LEFT: camera + path -->
-  <div class="cam-box">
-    <img id="cam" src="/stream.mjpg" width="320" height="320" alt="cam">
-    <div class="cam-btns">
-      <button id="trackBtn"    class="tgl">Track OFF</button>
-      <button id="autostepBtn" class="tgl">AutoStep OFF</button>
-      <button id="gammaBtn"    class="tgl">Gamma OFF</button>
-      <button id="histBtn"     class="tgl">HistEq OFF</button>
-      <button id="facesaveBtn" class="tgl">FaceSave OFF</button>
+    <div class="container">
+        <!-- Video Panel -->
+        <div class="panel video-panel">
+            <h2>📹 Live Video Feed</h2>
+            <div class="video-container">
+                <img id="videoFeed" src="/video_feed" alt="Video Feed">
+            </div>
+            <div class="button-row">
+                <button onclick="startCamera()">📷 Start Camera</button>
+                <button class="toggle-btn" id="trackingBtn" onclick="toggleTracking()">🎯 Enable Tracking</button>
+                <button class="toggle-btn" id="cameraTrackingBtn" onclick="toggleCameraTracking()">📹 Enable Camera Tracking</button>
+                <button class="emergency-btn" onclick="emergencyStop()">🛑 EMERGENCY STOP</button>
+            </div>
+        </div>
+
+        <!-- Status & Control Panel -->
+        <div class="panel">
+            <h2>📊 System Status</h2>
+            <div class="status-panel" id="statusPanel">
+                <div class="status-item">
+                    <span>Human Tracking:</span>
+                    <span class="status-value" id="trackingStatus">OFF</span>
+                </div>
+                <div class="status-item">
+                    <span>Camera Tracking:</span>
+                    <span class="status-value" id="cameraTrackingStatus">OFF</span>
+                </div>
+                <div class="status-item">
+                    <span>Human Detected:</span>
+                    <span class="status-value" id="humanStatus">NO</span>
+                </div>
+                <div class="status-item">
+                    <span>Distance:</span>
+                    <span class="status-value" id="distanceStatus">0 cm</span>
+                </div>
+                <div class="status-item">
+                    <span>ROI Zone:</span>
+                    <span class="status-value" id="roiStatus">CENTER</span>
+                </div>
+                <div class="status-item">
+                    <span>Power Mode:</span>
+                    <span class="status-value" id="powerStatus">MEDIUM</span>
+                </div>
+                <div class="status-item">
+                    <span>Walking:</span>
+                    <span class="status-value" id="walkingStatus">NO</span>
+                </div>
+            </div>
+
+            <h3>⚡ Power Mode</h3>
+            <select id="powerMode" onchange="setPowerMode()">
+                <option value="low">🔋 Low Power</option>
+                <option value="medium" selected>⚡ Medium Power</option>
+                <option value="high">🚀 High Power</option>
+                <option value="max">💥 Maximum Power</option>
+            </select>
+        </div>
+
+        <!-- Manual Control Panel -->
+        <div class="panel">
+            <h2>🎮 Manual Control</h2>
+
+            <h3>🚶 Basic Movement</h3>
+            <div class="direction-pad">
+                <button class="up" onclick="manualMove('forward')">⬆️</button>
+                <button class="left" onclick="manualMove('left')">⬅️</button>
+                <button class="center" onclick="manualMove('stance')">🏠</button>
+                <button class="right" onclick="manualMove('right')">➡️</button>
+                <button class="down" onclick="manualMove('back')">⬇️</button>
+            </div>
+
+            <h3>🕷️ Spider Postures</h3>
+            <div class="button-group">
+                <button onclick="manualMove('defensive')">🛡️ Defensive</button>
+                <button onclick="manualMove('attack')">⚔️ Attack</button>
+                <button onclick="manualMove('crouch')">🦆 Crouch</button>
+            </div>
+
+            <h3>📷 Manual Camera Control</h3>
+            <div class="direction-pad">
+                <button class="up" onclick="cameraControl('up')">⬆️</button>
+                <button class="left" onclick="cameraControl('left')">⬅️</button>
+                <button class="center" onclick="cameraControl('center')">📍</button>
+                <button class="right" onclick="cameraControl('right')">➡️</button>
+                <button class="down" onclick="cameraControl('down')">⬇️</button>
+            </div>
+        </div>
+
+        <!-- YENİ KAMERA AYARLARI PANELİ -->
+        <div class="panel">
+            <h2>📹 Advanced Camera Settings</h2>
+
+            <div class="camera-settings">
+                <h3>🎯 Tracking Sensitivity</h3>
+
+                <div class="setting-row">
+                    <span class="setting-label">Dead Zone Radius:</span>
+                    <div class="setting-control">
+                        <input type="range" id="deadZoneRadius" class="range-input"
+                               min="20" max="150" value="60"
+                               oninput="updateCameraSettings()">
+                        <span class="value-display" id="deadZoneValue">60px</span>
+                    </div>
+                </div>
+
+                <div class="setting-row">
+                    <span class="setting-label">Camera Speed:</span>
+                    <div class="setting-control">
+                        <input type="range" id="cameraStepSize" class="range-input"
+                               min="1" max="10" value="3"
+                               oninput="updateCameraSettings()">
+                        <span class="value-display" id="stepSizeValue">3°</span>
+                    </div>
+                </div>
+
+                <div class="setting-row">
+                    <span class="setting-label">Smooth Delay:</span>
+                    <div class="setting-control">
+                        <input type="range" id="smoothDelay" class="range-input"
+                               min="10" max="200" value="50"
+                               oninput="updateCameraSettings()">
+                        <span class="value-display" id="smoothDelayValue">0.05s</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="camera-settings">
+                <h3>📊 Camera Info</h3>
+                <div class="status-panel">
+                    <div class="status-item">
+                        <span>Pan Position:</span>
+                        <span class="status-value" id="panPosition">90°</span>
+                    </div>
+                    <div class="status-item">
+                        <span>Tilt Position:</span>
+                        <span class="status-value" id="tiltPosition">90°</span>
+                    </div>
+                    <div class="status-item">
+                        <span>Tracking Mode:</span>
+                        <span class="status-value" id="trackingMode">MANUAL</span>
+                    </div>
+                </div>
+            </div>
+
+            <h3>🔧 Quick Camera Presets</h3>
+            <div class="button-group">
+                <button onclick="cameraPreset('home')">🏠 Home</button>
+                <button onclick="cameraPreset('scan')">🔍 Scan Mode</button>
+                <button onclick="cameraPreset('low')">⬇️ Low Angle</button>
+                <button onclick="cameraPreset('high')">⬆️ High Angle</button>
+            </div>
+        </div>
+
+        <!-- REX Quad Style Movement Panel -->
+        <div class="panel">
+            <h2>🤖 REX Quad Style Movement</h2>
+
+            <h3>🚀 REX 8-Phase Gaits</h3>
+            <div class="direction-pad">
+                <button class="up" onclick="rexMovement('rex_forward')">⬆️ REX FWD</button>
+                <button class="left" onclick="rexMovement('rex_left')">⬅️ REX LEFT</button>
+                <button class="center" onclick="rexMovement('rex_stabilize')">🏠 REX STANCE</button>
+                <button class="right" onclick="rexMovement('rex_right')">➡️ REX RIGHT</button>
+                <button class="down" onclick="rexMovement('rex_backward')">⬇️ REX BACK</button>
+            </div>
+
+            <h3>🔄 REX Lean Control</h3>
+            <div class="button-group">
+                <button onclick="rexMovement('rex_lean_left')">⬅️ Lean Left</button>
+                <button onclick="rexMovement('rex_lean_right')">➡️ Lean Right</button>
+                <button onclick="rexMovement('rex_lean_forward')">⬆️ Lean Forward</button>
+                <button onclick="rexMovement('rex_lean_back')">⬇️ Lean Back</button>
+            </div>
+
+            <h3>📏 REX Stance Height</h3>
+            <div class="setting-row">
+                <span class="setting-label">Height:</span>
+                <div class="setting-control">
+                    <input type="range" id="rexStanceHeight" class="range-input"
+                           min="30" max="70" value="60"
+                           oninput="updateRexStance()">
+                    <span class="value-display" id="rexStanceValue">60°</span>
+                </div>
+            </div>
+
+            <h3>🎛️ REX Mode Toggle</h3>
+            <div class="button-group">
+                <button class="toggle-btn" id="rexModeBtn" onclick="toggleRexMode()">🤖 Enable REX Mode</button>
+                <button onclick="rexDemo()">🎬 REX Demo</button>
+            </div>
+        </div>
+
+        <!-- Advanced Movement Panel -->
+        <div class="panel">
+            <h2>🤖 Advanced Movement</h2>
+
+            <h3>🧠 Smart Gaits</h3>
+            <div class="button-group">
+                <button onclick="advancedMove('wave_gait')">🌊 Wave Gait</button>
+                <button onclick="advancedMove('creep_gait')">🐌 Creep Gait</button>
+            </div>
+
+            <h3>📏 Adaptive Walking</h3>
+            <div>
+                <label>Distance (cm):</label>
+                <input type="number" id="walkDistance" value="50" min="10" max="200">
+                <br>
+                <label>Direction:</label>
+                <select id="walkDirection">
+                    <option value="forward">Forward</option>
+                    <option value="backward">Backward</option>
+                    <option value="left">Left</option>
+                    <option value="right">Right</option>
+                </select>
+                <br>
+                <button onclick="adaptiveWalk()">🎯 Adaptive Walk</button>
+            </div>
+
+            <h3>🔢 Multi-Step Movement</h3>
+            <div>
+                <label>Steps:</label>
+                <input type="number" id="stepCount" value="3" min="1" max="10">
+                <br>
+                <button onclick="multiStep()">🦶 Multi-Step Walk</button>
+            </div>
+
+            <h3>⚙️ ROI Settings</h3>
+            <div>
+                <label>Stop Distance (cm):</label>
+                <input type="range" id="stopDistance" min="30" max="200" value="80" oninput="updateROI()">
+                <span id="stopDistanceValue">80</span>
+                <br>
+                <label>Min Distance (cm):</label>
+                <input type="range" id="minDistance" min="20" max="100" value="50" oninput="updateROI()">
+                <span id="minDistanceValue">50</span>
+                <br>
+                <label>
+                    <input type="checkbox" id="roiEnabled" checked onchange="updateROI()">
+                    Enable ROI Detection
+                </label>
+            </div>
+        </div>
     </div>
 
-    <div class="det-box">
-      <label for="detSel">Detector:</label>
-      <select id="detSel">
-        <option value="both" selected>Person+Face</option>
-        <option value="person">Person only</option>
-        <option value="face">Face only</option>
-      </select>
-    </div>
-
-    <div class="tgt-box">
-      <label for="targetSel">Target ID</label>
-      <select id="targetSel"></select>
-      <button id="refreshTgt">↻</button>
-    </div>
-
-    <h3>Path Visualization</h3>
-    <img src="/static/path_draw.png" width="320" height="320" alt="Path">
-
-    <!-- Kamera Kontrolü için eklendi -->
-    <h2>Camera Control</h2>
-    <div class="row">
-      <label for="panSlider">Pan: <span id="panValue">90</span>°</label>
-      <input type="range" id="panSlider" min="0" max="180" value="90">
-    </div>
-    <div class="row">
-      <label for="tiltSlider">Tilt: <span id="tiltValue">90</span>°</label>
-      <input type="range" id="tiltSlider" min="0" max="180" value="90">
-    </div>
-    <div class="row">
-      <button id="camTrackBtn" class="tgl">Camera Track OFF</button>
-    </div>
-
-  </div>
-
-  <!-- RIGHT: controls -->
-  <div class="ctrl">
-    <h1>REX-Pi5</h1>
-
-    <h2>Direction</h2>
-    <div class="row"><button data-cmd="forward">▲ Forward</button></div>
-    <div class="row">
-      <button data-cmd="left">◀ Left</button>
-      <button data-cmd="center">Center</button>
-      <button data-cmd="right">Right ▶</button>
-    </div>
-    <div class="row"><button data-cmd="back">▼ Back</button></div>
-
-    <h2>Lean</h2>
-    <div class="row">
-      <button data-cmd="lean?dir=left">Lean L</button>
-      <button data-cmd="lean?dir=right">Lean R</button>
-      <button data-cmd="lean?dir=fwd">Lean Fwd</button>
-      <button data-cmd="lean?dir=back">Lean Back</button>
-    </div>
-
-    <h2>Stance (<span id="stv">60</span>°)</h2>
-    <input id="st" type="range" min="30" max="70" value="60">
-    <div class="row"><button data-cmd="center">Stabilize</button></div>
-
-    <h2>Manual Servo</h2>
-    <input id="raw" style="width:260px" placeholder="0:60 3:120 7:45">
-    <button id="sendRaw">Send</button>
-
-    <h2>Sliders</h2>
-    <div id="sliders" class="row slider-box"></div>
-  </div>
-</div>
-
-</body></html>
+    <script src="./static/js/app.js"></script>
+</body>
+</html>
