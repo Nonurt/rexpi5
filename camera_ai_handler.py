@@ -2,7 +2,7 @@ import cv2
 import time
 import numpy as np
 import threading
-from config import VIDEO, AI_MODEL, CAMERA_SETTINGS, ROI_SETTINGS, CAMERA_TRACKING_SETTINGS, LED_SETTINGS
+from config import VIDEO, AI_MODEL, CAMERA_SETTINGS, ROI_SETTINGS, CAMERA_TRACKING_SETTINGS
 
 
 class CameraAIHandler:
@@ -12,6 +12,7 @@ class CameraAIHandler:
     Bu sınıf tek başına çalışmaz, RobotController tarafından miras alınır.
     """
 
+    # YENİ EKLENEN KONTROL DEĞİŞKENLERİ
     # Bu değişkenlerin RobotController'ın __init__ metodunda False olarak başlatılması gerekir.
     auto_gamma_enabled = False
     histogram_equalization_enabled = False
@@ -63,6 +64,7 @@ class CameraAIHandler:
         time.sleep(1)
         print("[CAMERA] Camera is in center position.")
 
+    # --- YENİ EKLENEN FONKSİYONLAR ---
     def toggle_auto_gamma(self):
         """Otomatik Gamma modunu açar/kapatır."""
         self.auto_gamma_enabled = not self.auto_gamma_enabled
@@ -76,34 +78,27 @@ class CameraAIHandler:
         return self.histogram_equalization_enabled
 
     def _apply_auto_gamma(self, frame):
-        """Görüntü parlaklığı düşükse gamma düzeltmesi uygular ve LED'i yakar."""
+        """Görüntü parlaklığı düşükse gamma düzeltmesi uygular."""
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         mean_brightness = np.mean(gray)
 
-        # LED_SETTINGS'den parlaklık eşiğini al
-        if mean_brightness < LED_SETTINGS['brightness_threshold']:
-            # Otomatik modda LED parlaklığını ayarla (bu değer de config'den gelebilir)
-            # Bu fonksiyon RobotController'da olduğu için self üzerinden erişiyoruz.
-            if hasattr(self, 'set_led_brightness'):
-                self.toggle_led(state=True)  # LED'in açık olduğundan emin ol
-                self.set_led_brightness(LED_SETTINGS['manual_brightness'])  # Ayarlanabilir parlaklık
-
+        # Eğer görüntü çok karanlıksa (örneğin ortalama parlaklık 100'ün altındaysa)
+        if mean_brightness < 100:
+            # Parlaklığı artırmak için gamma değerini 1'den büyük yap
             gamma = 1.5
             inv_gamma = 1.0 / gamma
             table = np.array([((i / 255.0) ** inv_gamma) * 255 for i in np.arange(0, 256)]).astype("uint8")
             return cv2.LUT(frame, table)
-        else:
-            # Ortam aydınlıksa LED'i kapat
-            if hasattr(self, 'toggle_led'):
-                self.toggle_led(state=False)
-
         return frame
 
     def _apply_histogram_equalization(self, frame):
         """Görüntü kontrastını artırmak için histogram eşitleme uygular."""
+        # Renkli görüntüde bozulmayı önlemek için YUV renk uzayında sadece parlaklık (Y) kanalına uygulanır
         yuv_img = cv2.cvtColor(frame, cv2.COLOR_BGR2YUV)
         yuv_img[:, :, 0] = cv2.equalizeHist(yuv_img[:, :, 0])
         return cv2.cvtColor(yuv_img, cv2.COLOR_YUV2BGR)
+
+    # --------------------------------
 
     def camera_loop(self):
         """Sürekli olarak kameradan görüntü okuyan, işleyen ve saklayan ana döngü."""
@@ -114,11 +109,13 @@ class CameraAIHandler:
                     time.sleep(0.1)
                     continue
 
+                # --- YENİ EKLENEN GÖRÜNTÜ İYİLEŞTİRME KONTROLLERİ ---
                 if self.auto_gamma_enabled:
                     frame = self._apply_auto_gamma(frame)
 
                 if self.histogram_equalization_enabled:
                     frame = self._apply_histogram_equalization(frame)
+                # ----------------------------------------------------
 
                 if self.net is not None:
                     frame = self.detect_humans(frame)
@@ -134,6 +131,7 @@ class CameraAIHandler:
                 time.sleep(1)
 
     def detect_humans(self, frame):
+        # ... (Bu fonksiyonun içeriği aynı kalır, değişiklik yok)
         if self.net is None:
             return frame
 
@@ -195,6 +193,7 @@ class CameraAIHandler:
 
     def add_status_overlay(self, frame):
         """Görüntünün üzerine robotun anlık durumunu yazan bir katman ekler."""
+        # --- DURUM BİLGİSİNE YENİ SATIRLAR EKLENDİ ---
         status_lines = [
             f"Robot Track: {'ON' if self.tracking_enabled else 'OFF'}",
             f"Camera Track: {'ON' if self.camera_tracking else 'OFF'}",
@@ -203,10 +202,11 @@ class CameraAIHandler:
             f"ROI Zone: {getattr(self, 'last_roi_zone', 'N/A').upper()}",
             f"Power: {self.power_mode.upper()}",
             f"Walking: {'YES' if self.walking else 'NO'}",
-            "--- Image Enhancement ---",
+            "--- Image Enhancement ---",  # Ayırıcı
             f"Auto Gamma: {'ON' if self.auto_gamma_enabled else 'OFF'}",
             f"Histogram Eq: {'ON' if self.histogram_equalization_enabled else 'OFF'}"
         ]
+        # --------------------------------------------
 
         y0, dy = 20, 20
         for i, line in enumerate(status_lines):
@@ -219,6 +219,7 @@ class CameraAIHandler:
 
         return frame
 
+    # ... (Geriye kalan tüm fonksiyonlar: draw_roi_zones, camera_track_human, set_camera_position, camera_sweep_search aynı kalır)
     def draw_roi_zones(self, frame):
         """Yapılandırmadaki ROI bölgelerini ekrana çizer."""
         if not hasattr(self, 'roi_enabled') or not self.roi_enabled:
@@ -235,51 +236,26 @@ class CameraAIHandler:
 
     def camera_track_human(self, human_center):
         """
-        PID kontrol kullanarak kameranın pan ve tilt servolarını
+        Orantısal kontrol kullanarak kameranın pan ve tilt servolarını
         hareket ettirerek insanı daha pürüzsüz takip etmesini sağlar.
         """
         if not self.camera_tracking or self.camera_lock.locked():
             return
 
         with self.camera_lock:
-            current_time = time.time()
-            dt = current_time - self.last_pid_time
-            if dt == 0: return
-
             center_x, center_y = human_center
-
-            # --- Pan (Yatay) Eksen PID Hesabı ---
             error_pan = self.frame_center_x - center_x
-
-            if abs(error_pan) > CAMERA_TRACKING_SETTINGS['dead_zone_radius']:
-                self.pan_integral += error_pan * dt
-                derivative_pan = (error_pan - self.pan_last_error) / dt
-                output_pan = (self.pan_kp * error_pan) + (self.pan_ki * self.pan_integral) + (
-                            self.pan_kd * derivative_pan)
-                new_pan_angle = self.camera_pan_angle + output_pan
-            else:
-                self.pan_integral = 0
-                new_pan_angle = self.camera_pan_angle
-
-            self.pan_last_error = error_pan
-
-            # --- Tilt (Dikey) Eksen PID Hesabı ---
             error_tilt = self.frame_center_y - center_y
+            dead_zone_radius = CAMERA_TRACKING_SETTINGS['dead_zone_radius']
+            p_gain = CAMERA_TRACKING_SETTINGS['p_gain']
 
-            if abs(error_tilt) > CAMERA_TRACKING_SETTINGS['dead_zone_radius']:
-                self.tilt_integral += error_tilt * dt
-                derivative_tilt = (error_tilt - self.tilt_last_error) / dt
-                output_tilt = (self.tilt_kp * error_tilt) + (self.tilt_ki * self.tilt_integral) + (
-                            self.tilt_kd * derivative_tilt)
-                new_tilt_angle = self.camera_tilt_angle - output_tilt
-            else:
-                self.tilt_integral = 0
-                new_tilt_angle = self.camera_tilt_angle
+            if abs(error_pan) < dead_zone_radius and abs(error_tilt) < dead_zone_radius:
+                return
 
-            self.tilt_last_error = error_tilt
-
-            self.last_pid_time = current_time
-
+            pan_adjustment = error_pan * p_gain
+            tilt_adjustment = error_tilt * p_gain
+            new_pan_angle = self.camera_pan_angle + pan_adjustment
+            new_tilt_angle = self.camera_tilt_angle - tilt_adjustment
             self.set_camera_position(new_pan_angle, new_tilt_angle, smooth=True)
 
     def set_camera_position(self, pan_angle=None, tilt_angle=None, smooth=False):

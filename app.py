@@ -249,54 +249,6 @@ def stop_all():
     return jsonify({'status': 'success', 'message': 'All functions stopped - Emergency stop activated'})
 
 
-# === YENİ EKLENEN API ROTALARI (PID, LED, GÖRÜNTÜ) ===
-
-@app.route('/api/pid_settings', methods=['POST'])
-def update_pid_settings():
-    """Web arayüzünden gelen PID kazançlarını günceller."""
-    data = request.get_json()
-    try:
-        controller.pan_kp = float(data.get('pan_kp', controller.pan_kp))
-        controller.pan_ki = float(data.get('pan_ki', controller.pan_ki))
-        controller.pan_kd = float(data.get('pan_kd', controller.pan_kd))
-        controller.tilt_kp = float(data.get('tilt_kp', controller.tilt_kp))
-        controller.tilt_ki = float(data.get('tilt_ki', controller.tilt_ki))
-        controller.tilt_kd = float(data.get('tilt_kd', controller.tilt_kd))
-        print(f"[API] PID settings updated.")
-        return jsonify(success=True, message="PID settings updated.")
-    except Exception as e:
-        return jsonify(success=False, message=str(e)), 400
-
-
-@app.route('/api/led_control', methods=['POST'])
-def led_control():
-    """Web arayüzünden LED'i kontrol eder."""
-    data = request.get_json()
-    action = data.get('action')
-    if action == 'toggle':
-        new_state = controller.toggle_led()
-        return jsonify(success=True, enabled=new_state)
-    elif action == 'set_brightness':
-        brightness = int(data.get('brightness', 50))
-        controller.set_led_brightness(brightness)
-        return jsonify(success=True, brightness=brightness)
-    return jsonify(success=False, message="Invalid action."), 400
-
-
-@app.route('/api/image_enhancement', methods=['POST'])
-def image_enhancement_control():
-    """Web arayüzünden görüntü iyileştirme modlarını açar/kapatır."""
-    data = request.get_json()
-    toggle_type = data.get('type')
-    if toggle_type == 'gamma':
-        new_state = controller.toggle_auto_gamma()
-        return jsonify(success=True, type='gamma', enabled=new_state)
-    elif toggle_type == 'histogram':
-        new_state = controller.toggle_histogram_equalization()
-        return jsonify(success=True, type='histogram', enabled=new_state)
-    return jsonify(success=False, message="Invalid type."), 400
-
-
 # === GELİŞMİŞ HAREKET ROTALARI ===
 
 @app.route('/api/leg_control', methods=['POST'])
@@ -385,7 +337,17 @@ def rex_movement():
         return jsonify({'status': 'success', 'message': f'Executing REX {action}'})
     except Exception as e:
         return jsonify({'status': 'error', 'message': f'REX movement error: {str(e)}'})
+# app.py içinde
 
+@app.route('/toggle_gamma', methods=['POST'])
+def toggle_gamma():
+    is_enabled = robot.toggle_auto_gamma()
+    return jsonify(success=True, auto_gamma_enabled=is_enabled)
+
+@app.route('/toggle_histogram', methods=['POST'])
+def toggle_histogram():
+    is_enabled = robot.toggle_histogram_equalization()
+    return jsonify(success=True, histogram_equalization_enabled=is_enabled)
 
 # === UYGULAMAYI BAŞLATMA ===
 if __name__ == '__main__':
@@ -402,11 +364,9 @@ if __name__ == '__main__':
         app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)
 
     except KeyboardInterrupt:
-        print("\n[SYSTEM] Shutting down...")
-        # GÜVENLİ KAPATMA: Donanım kaynaklarını (Kamera, LED, PCA9685) serbest bırakır.
-        controller.cleanup()
-        print("[SYSTEM] System stopped safely.")
+        print("\n[INFO] Shutting down...")
+        controller.stop_camera()  # Güvenli kapatma için kamerayı durdur
+        print("[INFO] System stopped safely")
     except Exception as e:
-        print(f"[FATAL ERROR] System shutting down due to an error: {e}")
-        # Hata durumunda da kaynakları temizlemeye çalışır.
-        controller.cleanup()
+        print(f"[ERROR] System error: {e}")
+        controller.stop_camera()
