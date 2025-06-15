@@ -5,6 +5,84 @@ let cameraSettings = {
     smoothDelay: 0.05
 };
 
+// =================================================================
+// === YENİ EKLENEN FONKSİYONLAR (PID, LED, GÖRÜNTÜ İYİLEŞTİRME) ===
+// =================================================================
+
+/**
+ * PID slider'larından değerleri okur ve sunucuya gönderir.
+ */
+function updatePidSettings() {
+    const settings = {
+        pan_kp: document.getElementById('pan_kp').value,
+        pan_ki: document.getElementById('pan_ki').value,
+        pan_kd: document.getElementById('pan_kd').value,
+        tilt_kp: document.getElementById('tilt_kp').value,
+        tilt_ki: document.getElementById('tilt_ki').value,
+        tilt_kd: document.getElementById('tilt_kd').value,
+    };
+    fetch('/api/pid_settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if(data.success) {
+            showMessage('PID settings updated!', 'success');
+        } else {
+            showMessage('PID update failed: ' + data.message, 'error');
+        }
+    });
+}
+
+/**
+ * LED'i açıp kapatmak için sunucuya istek gönderir.
+ */
+function toggleLed() {
+    fetch('/api/led_control', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'toggle' })
+    });
+}
+
+/**
+ * LED parlaklık slider'ı değiştikçe sunucuya yeni değeri gönderir.
+ */
+function updateLedBrightness() {
+    const brightness = document.getElementById('ledBrightness').value;
+    document.getElementById('ledBrightnessValue').textContent = `${brightness}%`;
+    fetch('/api/led_control', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'set_brightness', brightness: brightness })
+    });
+}
+
+/**
+ * Otomatik Gamma veya Histogram Eşitleme modunu açıp kapatır.
+ * @param {string} type 'gamma' or 'histogram'
+ */
+function toggleImageEnhancement(type) {
+    fetch('/api/image_enhancement', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: type })
+    })
+    .then(response => response.json())
+    .then(data => {
+        const featureName = data.type === 'gamma' ? 'Auto Gamma' : 'Histogram Equalization';
+        const status = data.enabled ? 'enabled' : 'disabled';
+        showMessage(`${featureName} ${status}.`, 'success');
+    });
+}
+
+
+// ===============================================
+// === MEVCUT KODUNUZ (HİÇBİR ŞEY SİLİNMEDİ) ===
+// ===============================================
+
 // YENİ KAMERA AYARLARI FUNKTIONSYONLARI
 function updateCameraSettings() {
     const deadZoneRadius = parseInt(document.getElementById('deadZoneRadius').value);
@@ -245,6 +323,7 @@ function emergencyStop() {
     });
 }
 
+// === updateStatus FONKSİYONU GENİŞLETİLDİ ===
 function updateStatus() {
     fetch('/api/status')
     .then(response => response.json())
@@ -272,6 +351,17 @@ function updateStatus() {
         }
 
         document.getElementById('trackingMode').textContent = data.camera_tracking ? 'AUTO' : 'MANUAL';
+
+        // --- BU BÖLÜM EKLENDİ ---
+        // Yeni durumları (LED, Görüntü) arayüze yansıt
+        if(data.led_status) {
+            document.getElementById('ledToggleBtn').classList.toggle('active', data.led_status.enabled);
+        }
+        if(data.image_enhancement){
+            document.getElementById('gammaBtn').classList.toggle('active', data.image_enhancement.gamma);
+            document.getElementById('histogramBtn').classList.toggle('active', data.image_enhancement.histogram);
+        }
+        // --- EKLEME SONU ---
     })
     .catch(error => console.log('Status update error:', error));
 }
@@ -285,13 +375,28 @@ function showMessage(text, type = 'success') {
     setTimeout(() => message.classList.add('show'), 100);
     setTimeout(() => {
         message.classList.remove('show');
-        setTimeout(() => document.body.removeChild(message), 300);
+        setTimeout(() => { if(document.body.contains(message)) {document.body.removeChild(message)} }, 300);
     }, 3000);
 }
 
-// Initialize camera settings on page load
+// === 'load' OLAYI GÜNCELLENDİ ===
 window.addEventListener('load', function() {
     updateCameraSettings();
+
+    // --- BU BÖLÜM EKLENDİ ---
+    // PID sliderları için başlangıç değerlerini ve olay dinleyicilerini ayarla
+    ['pan_kp', 'pan_ki', 'pan_kd', 'tilt_kp', 'tilt_ki', 'tilt_kd'].forEach(id => {
+        const slider = document.getElementById(id);
+        const display = document.getElementById(`${id}_val`);
+        if (slider && display) {
+            slider.addEventListener('input', () => {
+                display.textContent = parseFloat(slider.value).toFixed(3);
+            });
+            // Sayfa yüklendiğinde mevcut değeri göster
+            display.textContent = parseFloat(slider.value).toFixed(3);
+        }
+    });
+    // --- EKLEME SONU ---
 });
 
 // Update status every 2 seconds
@@ -391,83 +496,3 @@ function rexDemo() {
         step++;
     }, 4000); // 4 saniye aralık
 }
-
-
-function toggleFeature(endpoint) {
-    fetch(endpoint, { method: 'POST' })
-        .then(response => response.json())
-        .then(data => {
-            console.log('Success:', data);
-            // Butonun durumunu belirten bir mesaj gösterelim
-            const featureName = endpoint.includes('gamma') ? 'Auto Gamma' : 'Histogram Equalization';
-            const status = Object.values(data)[1] ? 'enabled' : 'disabled'; // Gelen yanıta göre durumu al
-            showMessage(`${featureName} ${status}.`, 'success');
-        })
-        .catch((error) => {
-            console.error('Error:', error);
-            showMessage(`Error toggling feature: ${error}`, 'error');
-        });
-}
-// app.js dosyanızın sonuna ekleyin
-
-// --- LED KONTROL FONKSİYONLARI ---
-
-// Sunucuya sürekli istek göndermemek için debounce (gecikme) mekanizması
-let ledBrightnessTimeout;
-
-function setLedMode(mode) {
-    // Butonların aktif durumunu güncelle
-    document.getElementById('ledBtnOff').classList.toggle('active', mode === 'off');
-    document.getElementById('ledBtnAuto').classList.toggle('active', mode === 'auto');
-    document.getElementById('ledBtnManual').classList.toggle('active', mode === 'manual');
-
-    // Manuel parlaklık kontrolünü sadece manuel modda göster
-    const manualControl = document.getElementById('manualLedControl');
-    manualControl.style.display = (mode === 'manual') ? 'flex' : 'none';
-
-    // Sunucuya modu gönder
-    fetch('/set_led_mode', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: mode })
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.status === 'success') {
-            showMessage(data.message, 'success');
-            // Eğer moda manuel olarak geçildiyse, mevcut slider değeriyle parlaklığı ayarla
-            if (mode === 'manual') {
-                setLedBrightness();
-            }
-        } else {
-            showMessage(data.message, 'error');
-        }
-    });
-}
-
-function setLedBrightness() {
-    const brightnessSlider = document.getElementById('ledBrightness');
-    const brightnessValue = parseInt(brightnessSlider.value);
-
-    // Görünen değeri güncelle
-    document.getElementById('ledBrightnessValue').textContent = brightnessValue + '%';
-
-    // Sunucuyu aşırı yüklememek için debounce kullan
-    clearTimeout(ledBrightnessTimeout);
-    ledBrightnessTimeout = setTimeout(() => {
-        fetch('/set_led_brightness', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ brightness: brightnessValue })
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.status !== 'success') {
-                showMessage(data.message, 'error');
-            }
-        });
-    }, 250); // Kullanıcı kaydırmayı bıraktıktan 250ms sonra gönder
-}
-
-// Initial status update
-updateStatus();

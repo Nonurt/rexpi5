@@ -7,6 +7,11 @@ import busio
 from adafruit_pca9685 import PCA9685
 from adafruit_motor import servo
 
+# --- YENİ EKLENEN KISIM ---
+# LED kontrolü için RPi.GPIO kütüphanesi
+import RPi.GPIO as GPIO
+# -------------------------
+
 # Projemizdeki diğer modülleri import ediyoruz
 import config
 from movement_gaits import MovementGaits
@@ -14,8 +19,6 @@ from camera_ai_handler import CameraAIHandler
 
 
 # Ana Sınıf: Diğer modüllerdeki yetenekleri miras alır (inheritance).
-# Bu sayede bu sınıf hem hareket (MovementGaits) hem de kamera (CameraAIHandler)
-# fonksiyonlarını kendi metotlarıymış gibi kullanabilir.
 class HumanTrackingServoController(MovementGaits, CameraAIHandler):
     """
     Robotun ana kontrol sınıfı. Donanımı başlatır, durumu yönetir
@@ -35,17 +38,45 @@ class HumanTrackingServoController(MovementGaits, CameraAIHandler):
             servo_obj.set_pulse_width_range(*config.SERVO_PULSE_WIDTH_RANGE)
         print(f"[INIT] {len(self.servos)} servos configured.")
 
+        # --- YENİ EKLENEN KISIM: LED Donanım Başlatma ---
+        print("[INIT] Initializing LED on GPIO pin...")
+        GPIO.setmode(GPIO.BCM)
+        GPIO.setup(config.LED_SETTINGS['pin'], GPIO.OUT)
+        self.led_pwm = GPIO.PWM(config.LED_SETTINGS['pin'], 100)  # 100 Hz frekans
+        self.led_pwm.start(0)  # Başlangıçta LED kapalı (duty cycle %0)
+        self.led_brightness = 0
+        self.led_enabled = False
+        # ---------------------------------------------
+
         # --- Robot Durum Değişkenleri ---
         self.walking = False
-        self.walking_lock = threading.Lock()  # Hareketlerin çakışmasını önleyen kilit
+        self.walking_lock = threading.Lock()
         self.current_angles = {name: 90 for name in self.servos.keys()}
 
         # --- Kamera ve Takip Durum Değişkenleri ---
-        self.tracking_enabled = False  # Robotun fiziksel takibi (yürüme)
-        self.camera_tracking = False  # Kameranın kafa takibi
+        self.tracking_enabled = False
+        self.camera_tracking = False
         self.camera_lock = threading.Lock()
         self.camera_pan_angle = 90
         self.camera_tilt_angle = 90
+
+        # --- YENİ EKLENEN KISIM: PID Kontrol Değişkenleri ---
+        print("[INIT] Initializing PID controller variables...")
+        # Pan (Yatay) Eksen için
+        self.pan_kp = 0.04
+        self.pan_ki = 0.008
+        self.pan_kd = 0.015
+        self.pan_integral = 0
+        self.pan_last_error = 0
+        # Tilt (Dikey) Eksen için
+        self.tilt_kp = 0.04
+        self.tilt_ki = 0.008
+        self.tilt_kd = 0.015
+        self.tilt_integral = 0
+        self.tilt_last_error = 0
+        # PID hesaplaması için zaman takibi
+        self.last_pid_time = time.time()
+        # ----------------------------------------------------
 
         # --- Ayarları config dosyasından yükle ---
         print("[INIT] Loading settings from config.py...")
@@ -63,10 +94,8 @@ class HumanTrackingServoController(MovementGaits, CameraAIHandler):
         self.power_mode = "medium"
         self.power_settings = config.POWER_SETTINGS
 
-        # Görüntü işleme modlarını kapalı olarak başlat
         self.auto_gamma_enabled = False
         self.histogram_equalization_enabled = False
-
 
         # --- İnsan Takip Sistemi Değişkenleri ---
         self.human_detected = False
@@ -85,10 +114,45 @@ class HumanTrackingServoController(MovementGaits, CameraAIHandler):
         self.current_frame = None
 
         # --- Başlatma Fonksiyonlarını Çağır ---
-        # Bu metotlar miras alınan CameraAIHandler sınıfından gelir.
         self.init_ai_model()
         self.init_camera_position()
         print("[INIT] Controller initialized successfully.")
+
+    # --- YENİ EKLENEN KISIM: LED ve Temizleme Fonksiyonları ---
+    def set_led_brightness(self, brightness):
+        """LED parlaklığını %0-100 arasında ayarlar."""
+        self.led_brightness = max(0, min(100, brightness))
+        if self.led_enabled:
+            self.led_pwm.ChangeDutyCycle(self.led_brightness)
+        print(f"[LED] Brightness set to {self.led_brightness}%")
+
+    def toggle_led(self, state=None):
+        """LED'i açar/kapatır."""
+        if state is not None:
+            self.led_enabled = state
+        else:
+            self.led_enabled = not self.led_enabled
+
+        if self.led_enabled:
+            # LED açıldığında, parlaklık 0 ise varsayılan bir değere ayarla
+            current_brightness = self.led_brightness if self.led_brightness > 0 else config.LED_SETTINGS[
+                'manual_brightness']
+            self.led_pwm.ChangeDutyCycle(current_brightness)
+        else:
+            self.led_pwm.ChangeDutyCycle(0)
+        print(f"[LED] Turned {'ON' if self.led_enabled else 'OFF'}")
+        return self.led_enabled
+
+    def cleanup(self):
+        """Uygulama kapanırken donanımları güvenle kapatır."""
+        print("[SYSTEM] Cleaning up resources...")
+        self.stop_camera()
+        self.led_pwm.stop()
+        GPIO.cleanup()
+        self.pca.deinit()
+        print("[SYSTEM] Cleanup complete.")
+
+    # -----------------------------------------------------------
 
     def get_power_settings(self):
         """Mevcut güç modunun ayarlarını döndürür."""
@@ -107,32 +171,27 @@ class HumanTrackingServoController(MovementGaits, CameraAIHandler):
     def track_human(self, human_center, distance, roi_zone):
         """Ana insan takip mantığı. ROI kurallarına göre hareket kararı verir."""
         if self.walking:
-            return  # Zaten bir hareket varsa yenisini başlatma
+            return
 
         current_time = time.time()
         settings = self.get_power_settings()
 
-        # Her hareket arasında bekleme süresi (cooldown)
         if current_time - self.last_action_time < settings['cooldown']:
             return
 
-        # Mesafeye ve bölgeye göre yapılacak eylemi belirle
         action = self.check_roi_distance_rules(distance, roi_zone)
         print(f"[TRACKING] Action: {action}, Distance: {distance}cm, ROI: {roi_zone}")
 
-        # Eyleme göre uygun hareket fonksiyonunu çağır (Bu fonksiyonlar MovementGaits'ten gelir)
         if action == "retreat":
             threading.Thread(target=self.rex_backward_gait, daemon=True).start()
         elif action == "stop":
             print("[TRACKING] Stopping - Target in center and at a good distance.")
         elif action == "turn":
-            # Hedefe doğru dön
             if human_center[0] < self.frame_center_x - 50:
                 threading.Thread(target=self.rex_turn_left, daemon=True).start()
             elif human_center[0] > self.frame_center_x + 50:
                 threading.Thread(target=self.rex_turn_right, daemon=True).start()
         elif action == "approach":
-            # Hedef merkezdeyse ilerle, değilse dön
             if abs(human_center[0] - self.frame_center_x) < 100:
                 threading.Thread(target=self.rex_forward_gait, daemon=True).start()
             elif human_center[0] < self.frame_center_x:
@@ -144,20 +203,13 @@ class HumanTrackingServoController(MovementGaits, CameraAIHandler):
 
     def check_roi_distance_rules(self, distance, roi_zone):
         """ROI mesafe kurallarını kontrol eder ve eylem belirler."""
-        # Minimum güvenli mesafeden daha yakınsa geri çekil
         if distance <= self.roi_min_distance:
             return "retreat"
-
-        # Durma mesafesindeyse
         elif distance <= self.roi_stop_distance:
-            # ve merkez bölgedeyse dur
             if roi_zone == 'center':
                 return "stop"
-            # değilse merkeze doğru dön
             else:
                 return "turn"
-
-        # Normal takip mesafesindeyse yaklaş
         else:
             return "approach"
 
@@ -167,8 +219,6 @@ class HumanTrackingServoController(MovementGaits, CameraAIHandler):
             return 'center'
 
         x, y = human_center
-
-        # Öncelik sırasına göre bölgeleri kontrol et
         sorted_zones = sorted(self.roi_zones.items(), key=lambda item: item[1]['priority'])
 
         for zone_name, zone in sorted_zones:
@@ -176,7 +226,7 @@ class HumanTrackingServoController(MovementGaits, CameraAIHandler):
                     zone['y'] <= y <= zone['y'] + zone['h']):
                 return zone_name
 
-        return 'center'  # Varsayılan bölge
+        return 'center'
 
     def calculate_distance(self, bbox_height_px):
         """Tespit edilen insanın bounding box yüksekliğinden mesafesini tahmin eder."""
@@ -184,10 +234,7 @@ class HumanTrackingServoController(MovementGaits, CameraAIHandler):
             return 0
 
         cal = self.distance_calibration
-        # Basit üçgen benzerliği formülü
         distance = (cal['person_height_cm'] * cal['camera_focal_length']) / bbox_height_px
-
-        # Mesafeyi belirlenen min/max aralığında sınırla
         distance = max(cal['min_distance_cm'], min(cal['max_distance_cm'], distance))
 
         return int(distance)
@@ -196,13 +243,11 @@ class HumanTrackingServoController(MovementGaits, CameraAIHandler):
         """Tek bir servonun açısını güvenli bir şekilde ayarlar."""
         try:
             if servo_name in self.servos:
-                # Açıyı 0-180 derece arasında sınırla
                 angle = max(0, min(180, angle))
                 self.servos[servo_name].angle = angle
                 self.current_angles[servo_name] = angle
                 return True
         except Exception as e:
-            # Genellikle I2C bağlantı hatalarında bu hata oluşur
             print(f"[ERROR] Servo '{servo_name}' could not be set: {e}")
         return False
 
@@ -212,12 +257,10 @@ class HumanTrackingServoController(MovementGaits, CameraAIHandler):
             return
 
         current_angle = self.current_angles.get(servo_name, 90)
-        # Hedef açıya ulaşmak için adım başına ne kadar hareket edileceğini hesapla
         step_size = (target_angle - current_angle) / steps
         settings = self.get_power_settings()
 
         for i in range(steps):
             new_angle = current_angle + (step_size * (i + 1))
             self.set_servo_angle(servo_name, new_angle)
-            # Adımlar arasında güç moduna göre bekle
             time.sleep(settings['speed_delay'])
