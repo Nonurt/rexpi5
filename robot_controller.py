@@ -7,10 +7,57 @@ import busio
 from adafruit_pca9685 import PCA9685
 from adafruit_motor import servo
 
-# --- YENİ EKLENEN KISIM ---
-# LED kontrolü için RPi.GPIO kütüphanesi
-import RPi.GPIO as GPIO
-# -------------------------
+# --- GPIO KÜTÜPHANESİ İÇİN GELİŞTİRME UYUMLULUK BLOĞU ---
+# Bu blok, kodun hem Raspberry Pi'de hem de geliştirme bilgisayarında
+# çökmeden çalışmasını sağlar.
+try:
+    # Gerçek Raspberry Pi donanımında bu kütüphaneyi yüklemeye çalış
+    import RPi.GPIO as GPIO
+
+    print("[INIT] Real RPi.GPIO library loaded successfully.")
+except (ImportError, RuntimeError):
+    # Eğer kütüphane bulunamazsa (PC'de çalışıyorsa) veya donanım hatası verirse,
+    # sahte bir kütüphane oluşturarak programın çökmesini engelle.
+    print("[INIT] WARNING: RPi.GPIO library not found. This is normal if not running on a Raspberry Pi.")
+    print("[INIT] Using a mock (fake) GPIO library for development purposes.")
+
+
+    class MockGPIO:
+        """Gerçek RPi.GPIO kütüphanesini taklit eden sahte bir sınıf."""
+        BCM = 11
+        OUT = 1
+
+        def setmode(self, mode):
+            print(f"[MOCK_GPIO] Mode set to BCM")
+
+        def setup(self, pin, mode):
+            print(f"[MOCK_GPIO] Pin {pin} setup as OUT")
+
+        def PWM(self, pin, frequency):
+            print(f"[MOCK_GPIO] PWM created on pin {pin} at {frequency}Hz")
+            return self.MockPWM()
+
+        def cleanup(self):
+            print("[MOCK_GPIO] Cleanup called. Pins are safe.")
+
+        class MockPWM:
+            """Sahte PWM objesi"""
+
+            def start(self, duty_cycle):
+                print(f"[MOCK_PWM] PWM started with {duty_cycle}% duty cycle.")
+
+            def ChangeDutyCycle(self, duty_cycle):
+                # Bu mesaj çok sık basılabileceği için isteğe bağlı olarak yorum satırı yapılabilir
+                # print(f"[MOCK_PWM] Duty cycle changed to {duty_cycle}%")
+                pass
+
+            def stop(self):
+                print("[MOCK_PWM] PWM stopped.")
+
+
+    # GPIO değişkenini sahte sınıfımızla değiştiriyoruz.
+    GPIO = MockGPIO()
+# -------------------------------------------------------------
 
 # Projemizdeki diğer modülleri import ediyoruz
 import config
@@ -28,17 +75,29 @@ class HumanTrackingServoController(MovementGaits, CameraAIHandler):
     def __init__(self):
         # --- Donanım Başlatma ---
         print("[INIT] Initializing I2C and PCA9685 Servo Controller...")
-        self.i2c = busio.I2C(board.SCL, board.SDA)
-        self.pca = PCA9685(self.i2c)
-        self.pca.frequency = config.I2C_FREQUENCY
+        try:
+            self.i2c = busio.I2C(board.SCL, board.SDA)
+            self.pca = PCA9685(self.i2c)
+            self.pca.frequency = config.I2C_FREQUENCY
+            print("[INIT] PCA9685 Servo Controller configured successfully.")
+        except Exception as e:
+            print(f"[FATAL ERROR] Could not initialize PCA9685. Check I2C connection: {e}")
+            # PCA9685 olmadan sistemin çalışması anlamsız olduğu için çıkış yapılabilir.
+            # Ancak geliştirme için sahte bir PCA objesi de oluşturulabilir.
+            # Şimdilik devam etmesi için uyarı veriyoruz.
+            self.pca = None
 
-        print("[INIT] Configuring servos from config file...")
-        self.servos = {name: servo.Servo(self.pca.channels[ch]) for name, ch in config.SERVO_CHANNELS.items()}
-        for servo_obj in self.servos.values():
-            servo_obj.set_pulse_width_range(*config.SERVO_PULSE_WIDTH_RANGE)
-        print(f"[INIT] {len(self.servos)} servos configured.")
+        if self.pca:
+            print("[INIT] Configuring servos from config file...")
+            self.servos = {name: servo.Servo(self.pca.channels[ch]) for name, ch in config.SERVO_CHANNELS.items()}
+            for servo_obj in self.servos.values():
+                servo_obj.set_pulse_width_range(*config.SERVO_PULSE_WIDTH_RANGE)
+            print(f"[INIT] {len(self.servos)} servos configured.")
+        else:
+            self.servos = {}
+            print("[WARNING] No servos configured as PCA9685 is not available.")
 
-        # --- YENİ EKLENEN KISIM: LED Donanım Başlatma ---
+        # --- LED Donanım Başlatma ---
         print("[INIT] Initializing LED on GPIO pin...")
         GPIO.setmode(GPIO.BCM)
         GPIO.setup(config.LED_SETTINGS['pin'], GPIO.OUT)
@@ -60,21 +119,18 @@ class HumanTrackingServoController(MovementGaits, CameraAIHandler):
         self.camera_pan_angle = 90
         self.camera_tilt_angle = 90
 
-        # --- YENİ EKLENEN KISIM: PID Kontrol Değişkenleri ---
+        # --- PID Kontrol Değişkenleri ---
         print("[INIT] Initializing PID controller variables...")
-        # Pan (Yatay) Eksen için
         self.pan_kp = 0.04
         self.pan_ki = 0.008
         self.pan_kd = 0.015
         self.pan_integral = 0
         self.pan_last_error = 0
-        # Tilt (Dikey) Eksen için
         self.tilt_kp = 0.04
         self.tilt_ki = 0.008
         self.tilt_kd = 0.015
         self.tilt_integral = 0
         self.tilt_last_error = 0
-        # PID hesaplaması için zaman takibi
         self.last_pid_time = time.time()
         # ----------------------------------------------------
 
@@ -118,7 +174,6 @@ class HumanTrackingServoController(MovementGaits, CameraAIHandler):
         self.init_camera_position()
         print("[INIT] Controller initialized successfully.")
 
-    # --- YENİ EKLENEN KISIM: LED ve Temizleme Fonksiyonları ---
     def set_led_brightness(self, brightness):
         """LED parlaklığını %0-100 arasında ayarlar."""
         self.led_brightness = max(0, min(100, brightness))
@@ -134,7 +189,6 @@ class HumanTrackingServoController(MovementGaits, CameraAIHandler):
             self.led_enabled = not self.led_enabled
 
         if self.led_enabled:
-            # LED açıldığında, parlaklık 0 ise varsayılan bir değere ayarla
             current_brightness = self.led_brightness if self.led_brightness > 0 else config.LED_SETTINGS[
                 'manual_brightness']
             self.led_pwm.ChangeDutyCycle(current_brightness)
@@ -149,10 +203,9 @@ class HumanTrackingServoController(MovementGaits, CameraAIHandler):
         self.stop_camera()
         self.led_pwm.stop()
         GPIO.cleanup()
-        self.pca.deinit()
+        if self.pca:
+            self.pca.deinit()
         print("[SYSTEM] Cleanup complete.")
-
-    # -----------------------------------------------------------
 
     def get_power_settings(self):
         """Mevcut güç modunun ayarlarını döndürür."""
@@ -241,6 +294,7 @@ class HumanTrackingServoController(MovementGaits, CameraAIHandler):
 
     def set_servo_angle(self, servo_name, angle):
         """Tek bir servonun açısını güvenli bir şekilde ayarlar."""
+        if not self.pca: return False  # Donanım yoksa bir şey yapma
         try:
             if servo_name in self.servos:
                 angle = max(0, min(180, angle))
