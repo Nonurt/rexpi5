@@ -68,84 +68,108 @@ class MovementGaits:
         print("[REX] Stabilizing to stance position...")
         self.rex_servo_move(servo_positions, steps_per_servo, 0.005)
 
-    def rex_forward_gait(self):
-        """REX kodundaki forward() fonksiyonunun Python versiyonu"""
-        if self.walking: return
-        with self.walking_lock:
-            self.walking = True
-            settings = self.get_power_settings()
-            print("[REX] REX Forward gait - 8 phase ESP32 style")
-            try:
-                spd = settings['speed_delay']
-                high = settings['lift_range'] // 3
-                bigStep = settings['axis_range'] > 40
+        # movement_gaits.py dosyanıza bu fonksiyonları güncelleyin
 
-                def HIP_FWD(s):
-                    return 150 if bigStep else 120 if 'left' in s else 30 if bigStep else 60
+        def rex_forward_gait(self):
+            """REX kodundaki forward() fonksiyonunun Python versiyonu"""
+            if self.walking: return
+            with self.walking_lock:
+                self.walking = True
+                settings = self.get_power_settings()
+                print("[REX] REX Forward gait - 8 phase ESP32 style")
+                try:
+                    spd = settings['speed_delay']
+                    high = settings['lift_range'] // 3
+                    bigStep = settings['axis_range'] > 40
 
-                def HIP_BCK(s):
-                    return 30 if bigStep else 60 if 'left' in s else 150 if bigStep else 120
+                    # --- DÜZELTİLMİŞ MANTIK ---
+                    # Servo adında 'left' varsa yüksek açı (120/150), 'right' varsa düşük açı (60/30) verilir.
+                    def HIP_FWD(servo_name):
+                        if 'left' in servo_name:
+                            return 150 if bigStep else 120
+                        else:  # right
+                            return 30 if bigStep else 60
 
-                phases = [
-                    {'front_right_lift': 6 + high * 3, 'front_left_axis': HIP_BCK('fl'),
-                     'front_right_axis': HIP_FWD('fr')},
-                    {'front_right_lift': 42 + high * 3},
-                    {'rear_right_lift': 6 + high * 3, 'rear_left_axis': HIP_BCK('rl'),
-                     'rear_right_axis': HIP_FWD('rr')},
-                    {'rear_right_lift': 33 + high * 3},
-                    {'front_left_lift': 6 + high * 3, 'front_left_axis': HIP_FWD('fl'),
-                     'front_right_axis': HIP_BCK('fr')},
-                    {'front_left_lift': 42 + high * 3},
-                    {'rear_left_lift': 6 + high * 3, 'rear_left_axis': HIP_FWD('rl'), 'rear_right_axis': HIP_BCK('rr')},
-                    {'front_left_axis': 90, 'front_right_axis': 90, 'rear_left_axis': 90, 'rear_right_axis': 90,
-                     'rear_left_lift': 33 + high * 3}
-                ]
-                for i, p in enumerate(phases):
-                    print(f"[REX] Forward phase {i + 1}/8")
-                    self.rex_servo_move(p, {s: 3 for s in p.keys()}, spd)
-            finally:
-                self.walking = False
-                self.rex_stabilize()
+                    # Yukarıdaki mantığın tam tersi.
+                    def HIP_BCK(servo_name):
+                        if 'left' in servo_name:
+                            return 30 if bigStep else 60
+                        else:  # right
+                            return 150 if bigStep else 120
 
-    def rex_backward_gait(self):
-        """REX kodundaki back() fonksiyonunun Python versiyonu"""
-        if self.walking: return
-        with self.walking_lock:
-            self.walking = True
-            settings = self.get_power_settings()
-            print("[REX] REX Backward gait - ESP32 style")
-            try:
-                spd = settings['speed_delay']
-                high = settings['lift_range'] // 3
-                bigStep = settings['axis_range'] > 40
+                    # --- DÜZELTME SONU ---
 
-                def HIP_FWD(s):
-                    return 150 if bigStep else 120 if 'left' in s else 30 if bigStep else 60
+                    phases = [
+                        {'front_right_lift': 6 + high * 3, 'front_left_axis': HIP_BCK('front_left'),
+                         'front_right_axis': HIP_FWD('front_right')},
+                        {'front_right_lift': 42 + high * 3},
+                        {'rear_right_lift': 6 + high * 3, 'rear_left_axis': HIP_BCK('rear_left'),
+                         'rear_right_axis': HIP_FWD('rear_right')},
+                        {'rear_right_lift': 33 + high * 3},
+                        {'front_left_lift': 6 + high * 3, 'front_left_axis': HIP_FWD('front_left'),
+                         'front_right_axis': HIP_BCK('front_right')},
+                        {'front_left_lift': 42 + high * 3},
+                        {'rear_left_lift': 6 + high * 3, 'rear_left_axis': HIP_FWD('rear_left'),
+                         'rear_right_axis': HIP_BCK('rear_right')},
+                        {'front_left_axis': 90, 'front_right_axis': 90, 'rear_left_axis': 90, 'rear_right_axis': 90,
+                         'rear_left_lift': 33 + high * 3}
+                    ]
+                    for i, p in enumerate(phases):
+                        print(f"[REX] Forward phase {i + 1}/8")
+                        self.rex_servo_move(p, {s: 3 for s in p.keys()}, spd)
+                finally:
+                    self.walking = False
+                    self.rex_stabilize()
 
-                def HIP_BCK(s):
-                    return 30 if bigStep else 60 if 'left' in s else 150 if bigStep else 120
+        def rex_backward_gait(self):
+            """REX kodundaki back() fonksiyonunun Python versiyonu"""
+            if self.walking: return
+            with self.walking_lock:
+                self.walking = True
+                settings = self.get_power_settings()
+                print("[REX] REX Backward gait - ESP32 style")
+                try:
+                    spd = settings['speed_delay']
+                    high = settings['lift_range'] // 3
+                    bigStep = settings['axis_range'] > 40
 
-                # İleri yürümenin tersi mantıkla çalışır
-                phases = [
-                    {'front_left_lift': 6 + high * 3, 'front_left_axis': HIP_BCK('fl'),
-                     'front_right_axis': HIP_FWD('fr')},
-                    {'front_left_lift': 42 + high * 3},
-                    {'rear_left_lift': 6 + high * 3, 'rear_left_axis': HIP_BCK('rl'), 'rear_right_axis': HIP_FWD('rr')},
-                    {'rear_left_lift': 33 + high * 3},
-                    {'front_right_lift': 6 + high * 3, 'front_left_axis': HIP_FWD('fl'),
-                     'front_right_axis': HIP_BCK('fr')},
-                    {'front_right_lift': 42 + high * 3},
-                    {'rear_right_lift': 6 + high * 3, 'rear_left_axis': HIP_FWD('rl'),
-                     'rear_right_axis': HIP_BCK('rr')},
-                    {'front_left_axis': 90, 'front_right_axis': 90, 'rear_left_axis': 90, 'rear_right_axis': 90,
-                     'rear_right_lift': 33 + high * 3}
-                ]
-                for i, p in enumerate(phases):
-                    print(f"[REX] Backward phase {i + 1}/8")
-                    self.rex_servo_move(p, {s: 3 for s in p.keys()}, spd)
-            finally:
-                self.walking = False
-                self.rex_stabilize()
+                    # --- DÜZELTİLMİŞ MANTIK ---
+                    def HIP_FWD(servo_name):
+                        if 'left' in servo_name:
+                            return 150 if bigStep else 120
+                        else:  # right
+                            return 30 if bigStep else 60
+
+                    def HIP_BCK(servo_name):
+                        if 'left' in servo_name:
+                            return 30 if bigStep else 60
+                        else:  # right
+                            return 150 if bigStep else 120
+
+                    # --- DÜZELTME SONU ---
+
+                    # Geri yürüme, ileri yürümenin tersi mantıkla çalışır
+                    phases = [
+                        {'front_left_lift': 6 + high * 3, 'front_left_axis': HIP_BCK('front_left'),
+                         'front_right_axis': HIP_FWD('front_right')},
+                        {'front_left_lift': 42 + high * 3},
+                        {'rear_left_lift': 6 + high * 3, 'rear_left_axis': HIP_BCK('rear_left'),
+                         'rear_right_axis': HIP_FWD('rear_right')},
+                        {'rear_left_lift': 33 + high * 3},
+                        {'front_right_lift': 6 + high * 3, 'front_left_axis': HIP_FWD('front_left'),
+                         'front_right_axis': HIP_BCK('front_right')},
+                        {'front_right_lift': 42 + high * 3},
+                        {'rear_right_lift': 6 + high * 3, 'rear_left_axis': HIP_FWD('rear_left'),
+                         'rear_right_axis': HIP_BCK('rear_right')},
+                        {'front_left_axis': 90, 'front_right_axis': 90, 'rear_left_axis': 90, 'rear_right_axis': 90,
+                         'rear_right_lift': 33 + high * 3}
+                    ]
+                    for i, p in enumerate(phases):
+                        print(f"[REX] Backward phase {i + 1}/8")
+                        self.rex_servo_move(p, {s: 3 for s in p.keys()}, spd)
+                finally:
+                    self.walking = False
+                    self.rex_stabilize()
 
     def rex_turn_left(self):
         """REX kodundaki turn_left() fonksiyonunun Python versiyonu"""

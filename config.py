@@ -64,7 +64,7 @@ AI_MODEL = {
     'model_path': "/home/legendeltax/servo_control/models/MobileNetSSD_deploy.caffemodel",
     'classes': ["background", "aeroplane", "bicycle", "bird", "boat", "bottle", "bus", "car", "cat", "chair", "cow", "diningtable", "dog", "horse", "motorbike", "person", "pottedplant", "sheep", "sofa", "train", "tvmonitor"],
     'person_class_id': 15,
-    'confidence_threshold': 0.3
+    'confidence_threshold': 0.2
 }
 
 # Kamera Görüntü Ayarları
@@ -72,4 +72,10 @@ VIDEO = {
     'width': 640,
     'height': 480,
     'fps_delay': 0.033 # ~30 FPS
+}
+
+
+CAMERA_TRACKING_SETTINGS = {
+    'p_gain': 0.04,  # Orantısal kazanç. Hareket hızını belirler. 0.03-0.08 arası bir değerle başlayın.
+    'dead_zone_radius': 25  # Piksel cinsinden. Bu alan içinde kamera hareket etmez.
 }
