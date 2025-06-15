@@ -187,11 +187,10 @@ class CameraAIHandler:
 
         return frame
 
-    # <--- DEĞİŞİKLİK: TÜM FONKSİYON YENİDEN YAZILDI --->
     def camera_track_human(self, human_center):
         """
-        Orantısal kontrol kullanarak kameranın pan ve tilt servolarını
-        hareket ettirerek insanı daha pürüzsüz takip etmesini sağlar.
+        PID kontrolü ile kameranın pan ve tilt servolarını
+        hareket ettirerek insanı dead zone içinde tutmaya çalışır.
         """
         if not self.camera_tracking or self.camera_lock.locked():
             return
@@ -199,34 +198,61 @@ class CameraAIHandler:
         with self.camera_lock:
             center_x, center_y = human_center
 
-            # Hata payını hesapla (hedefin merkezden ne kadar uzakta olduğu)
+            # Hata payını hesapla
             error_pan = self.frame_center_x - center_x
             error_tilt = self.frame_center_y - center_y
 
             dead_zone_radius = CAMERA_TRACKING_SETTINGS['dead_zone_radius']
-            p_gain = CAMERA_TRACKING_SETTINGS['p_gain']
-
-            # Dead zone (ölü bölge) kontrolü
             if abs(error_pan) < dead_zone_radius and abs(error_tilt) < dead_zone_radius:
+                # PID reset (isteğe bağlı)
+                self.pid_pan_integral = 0
+                self.pid_tilt_integral = 0
+                self.prev_error_pan = 0
+                self.prev_error_tilt = 0
                 return
 
-            # Hareket miktarını hata ile orantılı olarak hesapla
-            pan_adjustment = error_pan * p_gain
-            tilt_adjustment = error_tilt * p_gain
+            # PID parametreleri
+            Kp = CAMERA_TRACKING_SETTINGS.get('p_gain', 0.08)
+            Ki = CAMERA_TRACKING_SETTINGS.get('i_gain', 0.005)
+            Kd = CAMERA_TRACKING_SETTINGS.get('d_gain', 0.01)
+            dt = 0.02  # sabit zaman adımı (frame delay ile uyumlu)
+
+            # Bellek başlatma
+            if not hasattr(self, 'pid_pan_integral'):
+                self.pid_pan_integral = 0
+                self.prev_error_pan = 0
+                self.pid_tilt_integral = 0
+                self.prev_error_tilt = 0
+
+            # --- PAN PID ---
+            self.pid_pan_integral += error_pan * dt
+            self.pid_pan_integral = max(-50, min(50, self.pid_pan_integral))  # I sınırlaması
+            d_error_pan = (error_pan - self.prev_error_pan) / dt
+            self.prev_error_pan = error_pan
+            pan_adjustment = Kp * error_pan + Ki * self.pid_pan_integral + Kd * d_error_pan
+
+            # --- TILT PID ---
+            self.pid_tilt_integral += error_tilt * dt
+            self.pid_tilt_integral = max(-50, min(50, self.pid_tilt_integral))
+            d_error_tilt = (error_tilt - self.prev_error_tilt) / dt
+            self.prev_error_tilt = error_tilt
+            tilt_adjustment = Kp * error_tilt + Ki * self.pid_tilt_integral + Kd * d_error_tilt
 
             # Yeni servo açılarını hesapla
             new_pan_angle = self.camera_pan_angle + pan_adjustment
-            # Tilt ekseni genellikle ters çalışır, bu yüzden -= kullanıyoruz.
-            # Eğer sizin servonuz düz çalışıyorsa += olarak değiştirin.
-            new_tilt_angle = self.camera_tilt_angle - tilt_adjustment
+            new_tilt_angle = self.camera_tilt_angle - tilt_adjustment  # tilt ters çalışır
 
-            # set_camera_position içinde zaten min/max kontrolü var,
-            # bu yüzden burada tekrar yapmaya gerek yok.
             self.set_camera_position(new_pan_angle, new_tilt_angle, smooth=True)
 
     def set_camera_position(self, pan_angle=None, tilt_angle=None, smooth=False):
         """Kamera servolarını belirtilen açılara ayarlar."""
+
+        # 👇 Pan yönü ters çevrilecekse burada yapılır
+        invert_pan = CAMERA_SETTINGS.get("invert_pan", False)
+        invert_tilt = CAMERA_SETTINGS.get("invert_tilt", False)
+
         if pan_angle is not None:
+            pan_angle = 180 - pan_angle if invert_pan else pan_angle  # 🔁 tersle!
             self.camera_pan_angle = max(CAMERA_SETTINGS['pan_min'], min(CAMERA_SETTINGS['pan_max'], pan_angle))
             if smooth:
                 self.smooth_servo_move('camera_pan', self.camera_pan_angle)
@@ -234,6 +260,7 @@ class CameraAIHandler:
                 self.set_servo_angle('camera_pan', self.camera_pan_angle)
 
         if tilt_angle is not None:
+            tilt_angle = 180 - tilt_angle if invert_tilt else tilt_angle
             self.camera_tilt_angle = max(CAMERA_SETTINGS['tilt_min'], min(CAMERA_SETTINGS['tilt_max'], tilt_angle))
             if smooth:
                 self.smooth_servo_move('camera_tilt', self.camera_tilt_angle)

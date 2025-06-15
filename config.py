@@ -76,6 +76,8 @@ VIDEO = {
 
 
 CAMERA_TRACKING_SETTINGS = {
-    'p_gain': 0.04,  # Orantısal kazanç. Hareket hızını belirler. 0.03-0.08 arası bir değerle başlayın.
-    'dead_zone_radius': 25  # Piksel cinsinden. Bu alan içinde kamera hareket etmez.
+    'p_gain': 0.08,
+    'i_gain': 0.005,
+    'd_gain': 0.01,
+    'dead_zone_radius': 30
 }
