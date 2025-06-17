@@ -14,7 +14,7 @@ REXPi5 is a Python-based project that transforms a Raspberry Pi 5 into a Wi-Fi c
 
 ## Media
 
-![Robot Demo](media/images/1.jpg)
+![Robot Demo]([[media/images/1.jpg](https://github.com/Nonurt/rexpi5/blob/main/media/images/1.jpeg)](https://github.com/Nonurt/rexpi5/blob/main/media/images/1.jpeg))
 
 Watch demo videos:
 
