@@ -1,0 +1,7 @@
+Flask>=2.2
+opencv-python>=4.5
+numpy>=1.21
+adafruit-circuitpython-pca9685>=1.0.0
+adafruit-circuitpython-motor>=1.0.0
+adafruit-blinka>=6.0.0
+RPi.GPIO>=0.7
